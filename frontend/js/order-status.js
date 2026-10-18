@@ -2,7 +2,13 @@
  * Page logic for order-status.html: look up an order by ID + email.
  */
 (function () {
-  document.getElementById("year").textContent = new Date().getFullYear();
+  // Stripe sends the customer back here as order-status.html?order=<id>
+  // after paying: prefill the ID, and the cart's job is done.
+  const orderFromUrl = new URLSearchParams(window.location.search).get("order");
+  if (orderFromUrl) {
+    document.getElementById("order-id").value = orderFromUrl;
+    if (window.Cart) window.Cart.clear();
+  }
 
   const form = document.getElementById("lookup-form");
   const statusEl = document.getElementById("status");

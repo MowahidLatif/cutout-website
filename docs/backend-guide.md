@@ -36,9 +36,10 @@ backend/
     │                             POST /admin/orders/:id/download-links,
     │                             PATCH /admin/orders/:id/status
     ├── services/
-    │   ├── pricing.js          — getPricingConfig, calculatePrice,
-    │   │                         calculateShipping (authoritative; mirrored
-    │   │                         in frontend/js/pricing.js)
+    │   ├── pricing.js          — sizeTierForHeight, getPricingConfig,
+    │   │                         calculatePrice, calculateShipping
+    │   │                         (authoritative; mirrored in
+    │   │                         frontend/js/pricing.js)
     │   ├── orders.js           — createOrder, getOrderById, setStripeSession,
     │   │                         markOrderPaid, updateOrderStatus,
     │   │                         getStatusEvents, listOrders (uses the db
@@ -57,7 +58,8 @@ backend/
             │                     quantity_discount_tiers
             ├── 002_shipping.sql — shipping_rates (seeded) + orders.shipping_amount
             ├── 003_image_key.sql — order_items.image_url → image_key
-            └── 004_order_status_events.sql — status-change audit log
+            ├── 004_order_status_events.sql — status-change audit log
+            └── 005_item_customization.sql — order_items.width_in + text_elements
 ```
 
 `migrate.js` re-runs **every** file each time, so migrations must be
@@ -75,10 +77,12 @@ POST /api/uploads (multipart "image")
 POST /api/orders
   → routes/orders.js: hands req.body to the service
       → services/orders.js: createOrder
-          validateOrderInput   (email, phone, address, country, enums,
-                                quantity, heightIn, imageKey format)
+          validateOrderInput   (email, phone, address, country, material,
+                                quantity, heightIn 12–96, widthIn 6–96,
+                                textElements, imageKey format)
           storage.fileExists   (each imageKey must really be stored)
-          per item: pricing.calculatePrice + pricing.calculateShipping
+          per item: tier = pricing.sizeTierForHeight(heightIn)
+                    pricing.calculatePrice + pricing.calculateShipping
           one transaction: INSERT orders + order_items
       → 201 with the full order (incl. server-computed totals)
 
@@ -124,8 +128,8 @@ and become 404s. They never reach Postgres as a type error (a 500).
 
 ## Pricing service (critical: must match the frontend's copy)
 
-`services/pricing.js` owns `calculatePrice(...)` and
-`calculateShipping(...)`. These are the **authoritative** versions;
+`services/pricing.js` owns `sizeTierForHeight(...)`, `calculatePrice(...)`
+and `calculateShipping(...)`. These are the **authoritative** versions;
 `frontend/js/pricing.js` exists only for live UI feedback. If the formula
 changes, update both, and keep both deriving from the same config data
 (`pricing_config`, `quantity_discount_tiers` and `shipping_rates`, all
@@ -133,6 +137,9 @@ served by `GET /api/pricing-config`).
 
 Order of operations, per item:
 
+0. `size_tier = sizeTierForHeight(height_in)`: ≤ 36" small, ≤ 60" medium,
+   ≤ 78" life-size, otherwise XL. The customer picks a height in the
+   studio, never a tier, and any tier sent by the client is ignored.
 1. Look up `base_rate` for `(size_tier, material)` in `pricing_config`.
 2. Look up `discount_pct` for the quantity in `quantity_discount_tiers`
    (the row whose `[min_qty, max_qty]` range contains it).
@@ -224,7 +231,7 @@ dev), it `console.log`s what would have been sent instead of throwing.
 
 | Function | To | Contains |
 |---|---|---|
-| `sendFulfillmentEmail` | `FULFILLMENT_EMAIL` (skipped with a warning if unset) | full order details, shipping and total, plus an expiring **image download link** per item; you forward it to the supplier |
+| `sendFulfillmentEmail` | `FULFILLMENT_EMAIL` (skipped with a warning if unset) | full order details, shipping and total; per item the size, width, text elements and an expiring **image download link**; you forward it to the supplier |
 | `sendCustomerConfirmation` | the customer | the same order details, **without** download links |
 | `sendShippedNotification` | the customer | sent when the status changes to `shipped` |
 

@@ -8,6 +8,24 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/** Orderable standee heights, in inches (1–8 ft). */
+const HEIGHT_RANGE_IN = { min: 12, max: 96 };
+
+/**
+ * The size tier follows from the height — the customer picks a height, not
+ * a tier. Boundaries match the tier labels (small up to 3 ft, medium 3–5 ft,
+ * life-size 5–6.5 ft, XL above). Identical copy in frontend/js/pricing.js.
+ *
+ * @param {number} heightIn
+ * @returns {"small"|"medium"|"life_size"|"xl"}
+ */
+function sizeTierForHeight(heightIn) {
+  if (heightIn <= 36) return "small";
+  if (heightIn <= 60) return "medium";
+  if (heightIn <= 78) return "life_size";
+  return "xl";
+}
+
 async function getPricingConfig() {
   const [ratesResult, tiersResult, shippingResult] = await Promise.all([
     pool.query(
@@ -118,4 +136,10 @@ async function calculateShipping({ country, sizeTier, quantity }) {
   return round2(firstUnitRate + additionalUnitRate * (quantity - 1));
 }
 
-module.exports = { getPricingConfig, calculatePrice, calculateShipping };
+module.exports = {
+  HEIGHT_RANGE_IN,
+  sizeTierForHeight,
+  getPricingConfig,
+  calculatePrice,
+  calculateShipping,
+};

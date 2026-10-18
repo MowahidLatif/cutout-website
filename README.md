@@ -67,6 +67,25 @@ serving the frontend separately from the backend (as above), set
 Make sure `FRONTEND_ORIGIN` in `backend/.env` matches wherever you're
 serving the frontend from, so CORS allows it.
 
+The storefront is `index.html` (hero, the studio where standees are
+designed, how it works, gallery), plus `checkout.html` (cart →
+Stripe). See `docs/frontend-guide.md`.
+
+#### Before launch: replace the placeholders
+
+The design was built with values that aren't real yet. All of them are in
+two places:
+
+- `frontend/js/site-config.js`: delivery and production days, the "from"
+  price, the rating, and the material catalogue.
+- Comments marked `PLACEHOLDER` in `frontend/index.html`: the
+  "4.9/5 from 12,000+" rating, "48 hours", "AI removes the background"
+  (not built), the guarantee, and the four gallery quotes. **The rating
+  and quotes are invented.** Replace them with real, permissioned ones, or
+  remove them, before taking real customers.
+- `frontend/img/*.svg` are generated illustrations. Replace them with real
+  photos (and update the `src`).
+
 ### 4. Admin page
 
 Open `frontend/admin.html` (it isn't linked from the site nav). Enter

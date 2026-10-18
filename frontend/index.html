@@ -3,53 +3,393 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Life-Size Cutouts — Custom 2D Standees</title>
+  <title>CutoutCraft — Life-size custom standees from any photo</title>
+  <meta name="description" content="Upload your photo, set your height, customize with text, and order a life-size custom cardboard standee." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=Permanent+Marker&display=swap" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23d9572b%27/%3E%3Cg fill=%27none%27 stroke=%27white%27 stroke-width=%272.2%27 stroke-linecap=%27round%27%3E%3Ccircle cx=%2711%27 cy=%2711%27 r=%273%27/%3E%3Ccircle cx=%2711%27 cy=%2721%27 r=%273%27/%3E%3Cpath d=%27M13.2 13.2 24 24M24 8 13.2 18.8%27/%3E%3C/g%3E%3C/svg%3E" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <script src="js/icons.js"></script>
+
   <header class="site-header">
-    <div class="site-header__inner">
-      <a class="site-header__logo" href="index.html">Cutout Co.</a>
-      <nav class="site-header__nav">
-        <a href="pricing.html">Pricing</a>
-        <a href="create.html">Create Cutout</a>
-        <a href="order-status.html">Order Status</a>
+    <div class="container site-header__inner">
+      <a class="brand" href="index.html">
+        <span class="brand__mark"><svg class="icon"><use href="#i-scissors"/></svg></span>
+        CutoutCraft
+      </a>
+      <nav class="site-nav" data-nav aria-label="Main">
+        <a href="#studio">Studio</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#gallery">Gallery</a>
       </nav>
+      <div class="header-actions">
+        <a class="cart-pill" href="checkout.html">
+          <svg class="icon"><use href="#i-bag"/></svg>
+          <span class="cart-pill__label">Cart</span>
+          <span class="cart-pill__count" data-cart-count aria-label="items in cart">0</span>
+        </a>
+        <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="Menu">
+          <svg class="icon"><use href="#i-menu"/></svg>
+        </button>
+      </div>
     </div>
   </header>
 
   <main>
-    <section class="hero">
-      <h1>The cheapest, highest-quality life-size cutouts, delivered to your door</h1>
-      <p class="lead">
-        Upload a photo, pick your size and material, and we'll turn it into
-        a custom life-size 2D cutout — produced and shipped straight to you.
-      </p>
-      <a class="btn btn-primary" href="create.html">Create Your Cutout Now</a>
+    <!-- ================= Hero ================= -->
+    <section class="container hero">
+      <div class="hero__copy">
+        <!-- PLACEHOLDER: rating and shipped count are from the design mockup, not real data. -->
+        <div class="rating-pill">
+          <span class="stars" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+          </span>
+          <span data-site-rating>4.9/5 from 12,000+ standees shipped</span>
+        </div>
 
-      <div class="hero-badges">
-        <div class="hero-badge">
-          <strong>Upload &amp; configure</strong>
-          Pick your photo, size, and material in minutes.
+        <h1 class="hero__title">
+          Turn any photo<br class="br-wide" /> into a <span class="underline-accent">life-size</span><br class="br-wide" /> custom standee.
+        </h1>
+        <!-- PLACEHOLDER: "48 hours" turnaround is from the mockup; set real times in js/site-config.js. -->
+        <p class="hero__lead">
+          Upload your photo, set your height, customize with text, and we'll cut and ship it in 48 hours.
+        </p>
+
+        <div class="dropzone" id="hero-dropzone" role="button" tabindex="0" aria-describedby="hero-dropzone-sub">
+          <span class="icon-badge icon-badge--round"><svg class="icon"><use href="#i-image-up"/></svg></span>
+          <span class="dropzone__title">Drag &amp; drop your photo</span>
+          <span class="dropzone__sub" id="hero-dropzone-sub">
+            or <span class="link-accent">browse files</span> · PNG, JPG, WEBP up to 25 MB
+          </span>
         </div>
-        <div class="hero-badge">
-          <strong>Transparent pricing</strong>
-          See your price update live as you build your order.
+        <button type="button" class="sample-link" data-try-sample>
+          <svg class="icon"><use href="#i-sparkles"/></svg>
+          No photo handy? Try a sample
+        </button>
+
+        <!-- PLACEHOLDER: turnaround and guarantee claims are from the mockup. -->
+        <ul class="trust-list">
+          <li><svg class="icon"><use href="#i-clock"/></svg>Cut &amp; shipped in 48 hrs</li>
+          <li><svg class="icon"><use href="#i-truck"/></svg>Delivered to your door</li>
+          <li><svg class="icon"><use href="#i-shield"/></svg>Print-perfect guarantee</li>
+        </ul>
+      </div>
+
+      <div class="hero__media">
+        <div class="hero__photo">
+          <!-- Placeholder illustration — replace img/hero.svg with a real photo. -->
+          <img src="img/hero.svg" alt="A woman standing next to a life-size cardboard cutout of herself" width="800" height="1000" />
         </div>
-        <div class="hero-badge">
-          <strong>Shipped to your door</strong>
-          Produced and shipped directly to your address.
+        <!-- PLACEHOLDER: starting price from the mockup (SITE.fromPrice). -->
+        <div class="sticker" data-site-from-price>FROM $29</div>
+        <div class="stat-card">
+          <span class="stat-card__value">5'7"</span>
+          <span class="stat-card__label">Actual size,<br />actual smiles</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Studio ================= -->
+    <section class="section" id="studio">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow">The studio</span>
+          <h2>Design your standee, see it to scale.</h2>
+        </div>
+
+        <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+
+        <div class="studio">
+          <!-- Left: to-scale preview -->
+          <div class="studio__preview">
+            <div class="preview-toolbar">
+              <div class="segmented" role="group" aria-label="Size reference">
+                <button type="button" data-reference="person" aria-pressed="true">
+                  <svg class="icon"><use href="#i-person"/></svg>Person
+                </button>
+                <button type="button" data-reference="door" aria-pressed="false">
+                  <svg class="icon"><use href="#i-door"/></svg>Door
+                </button>
+                <button type="button" data-reference="none" aria-pressed="false">
+                  <svg class="icon"><use href="#i-grid"/></svg>None
+                </button>
+              </div>
+              <div class="preview-tools">
+                <button type="button" class="icon-btn" id="grid-toggle" aria-pressed="false" aria-label="Show 1 ft grid" title="Show 1 ft grid">
+                  <svg class="icon"><use href="#i-grid"/></svg>
+                </button>
+                <button type="button" class="icon-btn" id="fullscreen-toggle" aria-label="Full screen" title="Full screen">
+                  <svg class="icon"><use href="#i-expand"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="stage" id="stage">
+              <div class="stage__floor"></div>
+              <div class="stage__wall" id="stage-wall">
+                <div class="stage__grid" id="stage-grid" hidden></div>
+                <div class="stage__ruler" id="stage-ruler" aria-hidden="true"></div>
+
+                <div class="stage__ref" id="stage-ref" aria-hidden="true">
+                  <svg id="ref-person" viewBox="0 0 100 300" preserveAspectRatio="xMidYMax meet">
+                    <circle cx="50" cy="26" r="24"/>
+                    <path d="M22 60 Q50 52 78 60 Q86 62 86 72 L90 172 Q90 182 81 182 L76 182 L76 292 Q76 300 68 300 L56 300 Q52 300 51.5 292 L50 196 L48.5 292 Q48 300 44 300 L32 300 Q24 300 24 292 L24 182 L19 182 Q10 182 10 172 L14 72 Q14 62 22 60 Z"/>
+                  </svg>
+                  <svg id="ref-door" viewBox="0 0 36 80" preserveAspectRatio="xMidYMax meet" hidden>
+                    <rect x="0" y="0" width="36" height="80" rx="1"/>
+                    <rect x="4" y="4" width="28" height="33" rx="1" fill="#e3ded8"/>
+                    <rect x="4" y="41" width="28" height="35" rx="1" fill="#e3ded8"/>
+                    <circle cx="30.5" cy="40" r="1.4" fill="#b7aea4"/>
+                  </svg>
+                  <span class="stage__ref-label" id="ref-label">5'9" adult</span>
+                </div>
+
+                <div class="stage__figure" id="stage-figure" hidden>
+                  <img id="stage-img" alt="Your standee preview" />
+                  <div class="stage__texts" id="stage-texts"></div>
+                </div>
+                <span class="chip stage__sample-tag" id="sample-tag" hidden>Sample photo</span>
+
+                <div class="dropzone stage__dropzone" id="stage-dropzone" role="button" tabindex="0">
+                  <span class="icon-badge icon-badge--round"><svg class="icon"><use href="#i-image-up"/></svg></span>
+                  <span class="dropzone__title">Drag &amp; drop your photo</span>
+                  <span class="dropzone__sub">or <span class="link-accent">browse files</span> · PNG, JPG, WEBP up to 25 MB</span>
+                </div>
+              </div>
+            </div>
+            <p class="stage-caption">Preview shown to scale against a 9 ft wall.</p>
+            <p class="stage-caption" id="photo-actions" hidden>
+              <span id="photo-status"></span>
+              · <button type="button" class="link-accent" id="replace-photo">Replace photo</button>
+            </p>
+          </div>
+
+          <!-- Right: controls -->
+          <div class="studio__controls">
+            <section class="step-card" aria-labelledby="step-size">
+              <div class="step-card__head">
+                <span class="step-num">1</span>
+                <h3 id="step-size">Choose your size</h3>
+                <span class="icon-btn" title="Pick the real-world height of the finished standee. The size tier and price follow from it.">
+                  <svg class="icon"><use href="#i-info"/></svg>
+                </span>
+              </div>
+
+              <span class="field-label" id="height-label">Height</span>
+              <div class="height-row">
+                <span class="readout" id="height-readout" aria-live="polite">6'0"</span>
+                <div class="unit-inputs">
+                  <label class="unit-input">
+                    <input id="height-ft" type="number" min="1" max="8" step="1" value="6" aria-label="Height, feet" />ft
+                  </label>
+                  <label class="unit-input">
+                    <input id="height-in" type="number" min="0" max="11" step="1" value="0" aria-label="Height, inches" />in
+                  </label>
+                </div>
+              </div>
+              <input class="range" id="height-range" type="range" min="12" max="96" step="1" value="72" aria-labelledby="height-label" />
+              <div class="range-labels"><span>1 ft</span><span>8 ft</span></div>
+
+              <div class="subpanel">
+                <div class="subpanel__row">
+                  <div>
+                    <span class="field-label">Width</span>
+                    <span class="readout readout--sm" id="width-readout">—</span>
+                  </div>
+                  <label class="toggle">
+                    <svg class="icon"><use href="#i-lock"/></svg>
+                    Lock proportions
+                    <input id="lock-toggle" type="checkbox" checked />
+                    <span class="toggle__track"></span>
+                  </label>
+                </div>
+                <div class="unit-inputs" id="width-inputs" hidden style="margin-top:0.75rem">
+                  <label class="unit-input">
+                    <input id="width-ft" type="number" min="0" max="8" step="1" value="2" aria-label="Width, feet" />ft
+                  </label>
+                  <label class="unit-input">
+                    <input id="width-in" type="number" min="0" max="11" step="1" value="0" aria-label="Width, inches" />in
+                  </label>
+                </div>
+                <p class="hint" id="width-hint">Width auto-calculated from your photo's proportions.</p>
+              </div>
+            </section>
+
+            <section class="step-card" aria-labelledby="step-text">
+              <div class="step-card__head">
+                <span class="step-num">2</span>
+                <h3 id="step-text">Add text</h3>
+                <button type="button" class="btn btn-ghost btn-sm" id="add-text">
+                  <svg class="icon"><use href="#i-plus"/></svg>Add text
+                </button>
+              </div>
+              <p class="muted">Add a speech bubble, placard, or caption. Perfect for birthdays, retirements, and inside jokes.</p>
+              <div class="text-list" id="text-list"></div>
+            </section>
+
+            <section class="step-card" aria-labelledby="step-material">
+              <div class="step-card__head">
+                <span class="step-num">3</span>
+                <h3 id="step-material">Material</h3>
+              </div>
+              <div class="option-list" id="material-options" role="radiogroup" aria-labelledby="step-material"></div>
+            </section>
+
+            <section class="price-card" aria-labelledby="price-label">
+              <div class="price-card__top">
+                <div>
+                  <div class="price-card__label" id="price-label">Your standee</div>
+                  <div class="price-card__total" id="price-total" aria-live="polite">—</div>
+                </div>
+                <dl class="price-lines" id="price-lines"></dl>
+              </div>
+
+              <div class="qty-row">
+                <div class="stepper" aria-label="Quantity">
+                  <button type="button" id="qty-minus" aria-label="Fewer"><svg class="icon"><use href="#i-minus"/></svg></button>
+                  <input id="qty" type="number" min="1" max="99" step="1" value="1" aria-label="Quantity" />
+                  <button type="button" id="qty-plus" aria-label="More"><svg class="icon"><use href="#i-plus"/></svg></button>
+                </div>
+                <span class="discount-tag" id="discount-tag" hidden></span>
+              </div>
+
+              <div class="delivery-box">
+                <svg class="icon"><use href="#i-truck"/></svg>
+                <div>
+                  <strong id="delivery-title">Arrives —</strong>
+                  <span id="delivery-sub">Loading shipping…</span>
+                </div>
+              </div>
+
+              <button type="button" class="btn btn-primary btn-lg btn-block" id="add-to-cart" disabled>
+                <svg class="icon"><use href="#i-bag"/></svg>Add to cart
+              </button>
+              <p class="price-card__note" id="price-note" aria-live="polite">Upload a photo to get started.</p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= How it works ================= -->
+    <section class="section" id="how-it-works">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow">How it works</span>
+          <h2>From camera roll to doorstep.</h2>
+        </div>
+        <div class="steps-grid">
+          <article class="step-tile">
+            <div class="step-tile__top">
+              <span class="icon-badge"><svg class="icon"><use href="#i-image-up"/></svg></span>
+              <span class="step-tile__num">01</span>
+            </div>
+            <h3>Upload</h3>
+            <!-- PLACEHOLDER: background removal isn't built yet (photos are printed as uploaded). -->
+            <p>Drop in any photo. Our AI removes the background instantly.</p>
+          </article>
+          <article class="step-tile">
+            <div class="step-tile__top">
+              <span class="icon-badge"><svg class="icon"><use href="#i-ruler"/></svg></span>
+              <span class="step-tile__num">02</span>
+            </div>
+            <h3>Size it</h3>
+            <p>Pick any height from 1 to 8 ft and preview it to real scale.</p>
+          </article>
+          <article class="step-tile">
+            <div class="step-tile__top">
+              <span class="icon-badge"><svg class="icon"><use href="#i-scissors"/></svg></span>
+              <span class="step-tile__num">03</span>
+            </div>
+            <h3>We cut</h3>
+            <!-- PLACEHOLDER: production time is from the mockup. -->
+            <p>Printed on premium board and precision die-cut within 48 hours.</p>
+          </article>
+          <article class="step-tile">
+            <div class="step-tile__top">
+              <span class="icon-badge"><svg class="icon"><use href="#i-truck"/></svg></span>
+              <span class="step-tile__num">04</span>
+            </div>
+            <h3>It ships</h3>
+            <p>Arrives flat-packed with a fold-out easel. Ready to party.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Wall of fame ================= -->
+    <section class="section" id="gallery">
+      <div class="container">
+        <div class="section__head section__head--split">
+          <div>
+            <span class="eyebrow">Wall of fame</span>
+            <h2>Real cutouts. Real chaos.</h2>
+          </div>
+          <a class="btn btn-dark" href="#studio">Make yours</a>
+        </div>
+        <!-- PLACEHOLDER: these quotes and photos are from the design mockup, not real customers.
+             Replace with real (permissioned) customer photos and quotes before launch. -->
+        <div class="gallery-grid">
+          <figure class="gallery-card">
+            <div class="gallery-card__photo">
+              <img src="img/gallery-weddings.svg" alt="Wedding guests posing with a cardboard cutout of the grandmother" loading="lazy" width="600" height="600" />
+              <span class="gallery-card__tag">Weddings</span>
+            </div>
+            <blockquote>"Grandma couldn't make it, so she came in cardboard."</blockquote>
+          </figure>
+          <figure class="gallery-card">
+            <div class="gallery-card__photo">
+              <img src="img/gallery-pets.svg" alt="A golden retriever next to a cutout of itself" loading="lazy" width="600" height="600" />
+              <span class="gallery-card__tag">Pets</span>
+            </div>
+            <blockquote>"Biscuit is very confused. 10/10."</blockquote>
+          </figure>
+          <figure class="gallery-card">
+            <div class="gallery-card__photo">
+              <img src="img/gallery-graduations.svg" alt="A graduate cutout holding a congrats placard at a party" loading="lazy" width="600" height="600" />
+              <span class="gallery-card__tag">Graduations</span>
+            </div>
+            <blockquote>"The placard sign was the hit of the party."</blockquote>
+          </figure>
+          <figure class="gallery-card">
+            <div class="gallery-card__photo">
+              <img src="img/gallery-office.svg" alt="Coworkers celebrating a retirement with a cutout of their colleague" loading="lazy" width="600" height="600" />
+              <span class="gallery-card__tag">Office parties</span>
+            </div>
+            <blockquote>"Dave retired. Cardboard Dave did not."</blockquote>
+          </figure>
         </div>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    &copy; <span id="year"></span> Cutout Co. All rights reserved.
+    <div class="container site-footer__inner">
+      <a class="brand" href="index.html">
+        <span class="brand__mark"><svg class="icon"><use href="#i-scissors"/></svg></span>
+        CutoutCraft
+      </a>
+      <nav aria-label="Footer">
+        <a href="#studio">Studio</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#gallery">Gallery</a>
+      </nav>
+      <span>&copy; <span data-year></span> CutoutCraft. Made with cardboard &amp; love.</span>
+    </div>
   </footer>
 
-  <script>
-    document.getElementById("year").textContent = new Date().getFullYear();
-  </script>
+  <script src="js/site-config.js"></script>
+  <script src="js/pricing.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/studio.js"></script>
 </body>
 </html>

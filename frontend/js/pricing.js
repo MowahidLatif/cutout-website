@@ -73,9 +73,24 @@
     );
   }
 
+  /**
+   * The size tier follows from the height. Identical copy in
+   * backend/src/services/pricing.js — the backend applies its own copy and
+   * ignores any tier the browser sends.
+   *
+   * @param {number} heightIn
+   * @returns {"small"|"medium"|"life_size"|"xl"}
+   */
+  function sizeTierForHeight(heightIn) {
+    if (heightIn <= 36) return "small";
+    if (heightIn <= 60) return "medium";
+    if (heightIn <= 78) return "life_size";
+    return "xl";
+  }
+
   function round2(n) {
     return Math.round((n + Number.EPSILON) * 100) / 100;
   }
 
-  window.Pricing = { calculatePrice, calculateShipping };
+  window.Pricing = { calculatePrice, calculateShipping, sizeTierForHeight };
 })();

@@ -84,23 +84,36 @@ Request:
   "items": [
     {
       "imageKey": "3f2b7c1e-8d4a-4f6b-9c2e-1a5d7e9f0b3c.jpg",
-      "sizeTier": "life_size",
       "material": "coroplast",
       "heightIn": 68,
+      "widthIn": 51,
       "quantity": 3,
+      "textElements": [{ "style": "bubble", "text": "Happy 40th, Dave!" }],
       "notes": "optional"
     }
   ]
 }
 ```
 
+**The size tier isn't sent; it's derived from `heightIn`**:
+≤ 36" small, ≤ 60" medium, ≤ 78" life-size, otherwise XL. Any `sizeTier`
+in the request is ignored, so a 7 ft standee can't be priced as "small".
+
 Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
 - `customerEmail` looks like an email, and `customerPhone` is present.
 - `shippingAddress` has at least `line1` and `city`, and `country` is
   `CA` or `US`.
 - At least one item. Each item needs:
-  - `sizeTier` and `material` from the allowed values
-  - `quantity` ≥ 1 and `heightIn` > 0
+  - `material`: one of `cardboard`, `coroplast`, `foam_board`, `acrylic`.
+    The storefront only offers `coroplast` ("Premium Corrugated") for now,
+    but the API accepts any configured material.
+  - `quantity`: a whole number ≥ 1.
+  - `heightIn`: 12–96 (1–8 ft).
+  - `widthIn` (optional): 6–96. The studio sends the printed width, either
+    auto-calculated from the photo's proportions or set by hand.
+  - `textElements` (optional): up to 3 items of
+    `{ style: "bubble" | "placard" | "caption", text: 1–80 characters }`.
+    Text is trimmed.
   - an `imageKey` that is well-formed **and** exists in storage (i.e. it
     came from `POST /uploads`)
 
@@ -134,7 +147,8 @@ Response: the full order.
   "stripeSessionId": "…", "createdAt": "…", "updatedAt": "…",
   "items": [
     { "id": "…", "imageKey": "….jpg", "sizeTier": "life_size", "material": "coroplast",
-      "heightIn": 68, "quantity": 3, "unitPrice": 55.1, "lineTotal": 165.3 }
+      "heightIn": 68, "widthIn": 51, "textElements": [{ "style": "bubble", "text": "Happy 40th, Dave!" }],
+      "quantity": 3, "unitPrice": 55.1, "lineTotal": 165.3 }
   ]
 }
 ```

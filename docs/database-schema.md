@@ -13,6 +13,7 @@ order by `npm run migrate`:
 | `002_shipping.sql` | `shipping_rates` table (seeded) + `orders.shipping_amount` |
 | `003_image_key.sql` | Renames `order_items.image_url` → `image_key` |
 | `004_order_status_events.sql` | Status-change audit log |
+| `005_item_customization.sql` | `order_items.width_in` + `order_items.text_elements` (studio customization) |
 
 `migrate.js` re-runs **every** file on each run, so every migration must
 be idempotent (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`, guarded `DO`
@@ -43,9 +44,11 @@ blocks).
 | id | uuid, pk | |
 | order_id | uuid, fk → orders.id | cascade delete |
 | image_key | text | storage key from `POST /api/uploads`, e.g. `<uuid>.jpg`. Not a URL, so it works with either storage driver. Rows from before `003` still hold an old URL string |
-| size_tier | text (enum) | `small`, `medium`, `life_size`, `xl` |
-| material | text (enum) | `cardboard`, `coroplast`, `foam_board`, `acrylic` |
-| height_in | numeric(6,2) | entered manually by the customer |
+| size_tier | text (enum) | `small`, `medium`, `life_size`, `xl`; derived server-side from `height_in` (≤36 / ≤60 / ≤78 / above) |
+| material | text (enum) | `cardboard`, `coroplast`, `foam_board`, `acrylic`; the storefront's "Premium Corrugated" is `coroplast` |
+| height_in | numeric(6,2) | chosen by the customer in the studio, 12–96 |
+| width_in | numeric(6,2) | nullable; printed width, 6–96. Auto from the photo's proportions, or set by hand if unlocked. Null on rows from before `005` |
+| text_elements | jsonb | `[{ style: "bubble"\|"placard"\|"caption", text }]`, max 3, text 1–80 characters; default `[]` |
 | quantity | integer | `> 0` |
 | unit_price | numeric(10,2) | after the quantity discount; snapshot at order time (config may change later) |
 | line_total | numeric(10,2) | `unit_price * quantity`; product only, no shipping |

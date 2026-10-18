@@ -3,23 +3,43 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pricing — Cutout Co.</title>
+  <title>Pricing — CutoutCraft</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=Permanent+Marker&display=swap" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23d9572b%27/%3E%3Cg fill=%27none%27 stroke=%27white%27 stroke-width=%272.2%27 stroke-linecap=%27round%27%3E%3Ccircle cx=%2711%27 cy=%2711%27 r=%273%27/%3E%3Ccircle cx=%2711%27 cy=%2721%27 r=%273%27/%3E%3Cpath d=%27M13.2 13.2 24 24M24 8 13.2 18.8%27/%3E%3C/g%3E%3C/svg%3E" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <script src="js/icons.js"></script>
+
   <header class="site-header">
-    <div class="site-header__inner">
-      <a class="site-header__logo" href="index.html">Cutout Co.</a>
-      <nav class="site-header__nav">
-        <a href="pricing.html">Pricing</a>
-        <a href="create.html">Create Cutout</a>
-        <a href="order-status.html">Order Status</a>
+    <div class="container site-header__inner">
+      <a class="brand" href="index.html">
+        <span class="brand__mark"><svg class="icon"><use href="#i-scissors"/></svg></span>
+        CutoutCraft
+      </a>
+      <nav class="site-nav" data-nav aria-label="Main">
+        <a href="index.html#studio">Studio</a>
+        <a href="index.html#how-it-works">How it works</a>
+        <a href="index.html#gallery">Gallery</a>
       </nav>
+      <div class="header-actions">
+        <a class="cart-pill" href="checkout.html">
+          <svg class="icon"><use href="#i-bag"/></svg>
+          <span class="cart-pill__label">Cart</span>
+          <span class="cart-pill__count" data-cart-count aria-label="items in cart">0</span>
+        </a>
+        <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="Menu">
+          <svg class="icon"><use href="#i-menu"/></svg>
+        </button>
+      </div>
     </div>
   </header>
 
-  <main>
-    <h1>Pricing</h1>
+  <main class="container page">
+    <span class="eyebrow">Pricing</span>
+    <h1>Simple, transparent pricing</h1>
     <p class="lead">
       Price is based on size and material, and gets cheaper per cutout the
       more you order. Shipping is added at checkout based on your country
@@ -30,56 +50,76 @@
     <div id="status" class="status-message error"></div>
 
     <h2>Rates by size &amp; material</h2>
-    <table id="rates-table">
-      <thead>
-        <tr>
-          <th>Size tier</th>
-          <th>Material</th>
-          <th>Base price (each)</th>
-        </tr>
-      </thead>
-      <tbody id="rates-body">
-        <tr><td colspan="3">Loading rates&hellip;</td></tr>
-      </tbody>
-    </table>
+    <div class="table-scroll">
+      <table id="rates-table">
+        <thead>
+          <tr>
+            <th>Size tier</th>
+            <th>Material</th>
+            <th>Base price (each)</th>
+          </tr>
+        </thead>
+        <tbody id="rates-body">
+          <tr><td colspan="3">Loading rates&hellip;</td></tr>
+        </tbody>
+      </table>
+    </div>
 
     <h2>Quantity discounts</h2>
     <p class="lead">Ordering more than one? The per-unit price drops automatically at checkout.</p>
-    <table id="discount-table">
-      <thead>
-        <tr>
-          <th>Quantity</th>
-          <th>Discount</th>
-        </tr>
-      </thead>
-      <tbody id="discount-body">
-        <tr><td colspan="2">Loading discounts&hellip;</td></tr>
-      </tbody>
-    </table>
+    <div class="table-scroll">
+      <table id="discount-table">
+        <thead>
+          <tr>
+            <th>Quantity</th>
+            <th>Discount</th>
+          </tr>
+        </thead>
+        <tbody id="discount-body">
+          <tr><td colspan="2">Loading discounts&hellip;</td></tr>
+        </tbody>
+      </table>
+    </div>
 
     <h2>Shipping</h2>
     <p class="lead">Shipped directly to you. Extra cutouts in the same order ship at a lower rate.</p>
-    <table id="shipping-table">
-      <thead>
-        <tr>
-          <th>Country</th>
-          <th>Size tier</th>
-          <th>First cutout</th>
-          <th>Each additional</th>
-        </tr>
-      </thead>
-      <tbody id="shipping-body">
-        <tr><td colspan="4">Loading shipping rates&hellip;</td></tr>
-      </tbody>
-    </table>
+    <div class="table-scroll">
+      <table id="shipping-table">
+        <thead>
+          <tr>
+            <th>Country</th>
+            <th>Size tier</th>
+            <th>First cutout</th>
+            <th>Each additional</th>
+          </tr>
+        </thead>
+        <tbody id="shipping-body">
+          <tr><td colspan="4">Loading shipping rates&hellip;</td></tr>
+        </tbody>
+      </table>
+    </div>
 
-    <a class="btn btn-primary" href="create.html">Create Your Cutout Now</a>
+    <a class="btn btn-primary" href="index.html#studio">Design your standee</a>
   </main>
 
   <footer class="site-footer">
-    &copy; <span id="year"></span> Cutout Co. All rights reserved.
+    <div class="container site-footer__inner">
+      <a class="brand" href="index.html">
+        <span class="brand__mark"><svg class="icon"><use href="#i-scissors"/></svg></span>
+        CutoutCraft
+      </a>
+      <nav aria-label="Footer">
+        <a href="index.html#studio">Studio</a>
+        <a href="index.html#how-it-works">How it works</a>
+        <a href="index.html#gallery">Gallery</a>
+      </nav>
+      <span>&copy; <span data-year id="year"></span> CutoutCraft. Made with cardboard &amp; love.</span>
+    </div>
   </footer>
 
+  <script src="js/site-config.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/layout.js"></script>
   <script src="js/api.js"></script>
   <script>
     document.getElementById("year").textContent = new Date().getFullYear();

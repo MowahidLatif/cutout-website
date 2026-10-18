@@ -15,6 +15,9 @@ who produces and ships the product directly to the customer.
   framework.** Each page is its own `.html` file with shared `css/style.css`
   and small page-specific JS files. Open `frontend/index.html` in a browser
   and it works — no `npm run build` required for the frontend.
+  Storefront copy that isn't real yet (rating, quotes, turnaround, "from"
+  price) is marked `PLACEHOLDER` in `index.html` or lives in
+  `frontend/js/site-config.js`. Keep new unknowns there, never in prices.
 - **Backend: Express (Node.js), flat structure — routes → services → db.**
   No DTO/validator/repository ceremony. A route handler parses the request,
   calls a service function, returns JSON. Keep it boring and readable.

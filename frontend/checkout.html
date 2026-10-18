@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your cart — CutoutCraft</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=Permanent+Marker&display=swap" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23d9572b%27/%3E%3Cg fill=%27none%27 stroke=%27white%27 stroke-width=%272.2%27 stroke-linecap=%27round%27%3E%3Ccircle cx=%2711%27 cy=%2711%27 r=%273%27/%3E%3Ccircle cx=%2711%27 cy=%2721%27 r=%273%27/%3E%3Cpath d=%27M13.2 13.2 24 24M24 8 13.2 18.8%27/%3E%3C/g%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <script src="js/icons.js"></script>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="brand" href="index.html">
+        <span class="brand__mark"><svg class="icon"><use href="#i-scissors"/></svg></span>
+        CutoutCraft
+      </a>
+      <nav class="site-nav" data-nav aria-label="Main">
+        <a href="index.html#studio">Studio</a>
+        <a href="index.html#how-it-works">How it works</a>
+        <a href="index.html#gallery">Gallery</a>
+      </nav>
+      <div class="header-actions">
+        <a class="cart-pill" href="checkout.html" aria-current="page">
+          <svg class="icon"><use href="#i-bag"/></svg>
+          <span class="cart-pill__label">Cart</span>
+          <span class="cart-pill__count" data-cart-count aria-label="items in cart">0</span>
+        </a>
+        <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="Menu">
+          <svg class="icon"><use href="#i-menu"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container page">
+    <span class="eyebrow">Checkout</span>
+    <h1>Your cart</h1>
+
+    <div id="form-status" class="status-message error" role="alert"></div>
+
+    <div class="card empty-state" id="empty-cart" hidden>
+      <span class="icon-badge icon-badge--round"><svg class="icon"><use href="#i-bag"/></svg></span>
+      <h2 style="font-size:1.5rem">Your cart is empty</h2>
+      <p class="lead" style="margin:0 auto 1.5rem">Design a standee in the studio and add it here.</p>
+      <a class="btn btn-primary" href="index.html#studio">Go to the studio</a>
+    </div>
+
+    <form id="checkout-form" class="checkout" novalidate hidden>
+      <div class="checkout__main">
+        <div class="cart-list" id="cart-list"></div>
+        <a class="link-accent" href="index.html#studio" style="justify-self:start">+ Design another standee</a>
+
+        <fieldset>
+          <legend>Contact</legend>
+          <div class="form-row cols-2">
+            <div class="field">
+              <label for="email">Email</label>
+              <input id="email" type="email" autocomplete="email" required />
+              <span class="error">Enter a valid email address.</span>
+            </div>
+            <div class="field">
+              <label for="phone">Phone</label>
+              <input id="phone" type="tel" autocomplete="tel" required />
+              <span class="error">Enter a phone number.</span>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Shipping address</legend>
+          <div class="form-grid">
+            <div class="form-row cols-2">
+              <div class="field">
+                <label for="country">Country</label>
+                <select id="country" autocomplete="country" required>
+                  <option value="">Select country&hellip;</option>
+                  <option value="CA">Canada</option>
+                  <option value="US">United States</option>
+                </select>
+                <span class="hint">We currently ship to Canada and the United States.</span>
+                <span class="error">Choose your country.</span>
+              </div>
+            </div>
+            <div class="form-row cols-2">
+              <div class="field">
+                <label for="line1">Address line 1</label>
+                <input id="line1" type="text" autocomplete="address-line1" required />
+                <span class="error">Enter your street address.</span>
+              </div>
+              <div class="field">
+                <label for="line2">Address line 2 (optional)</label>
+                <input id="line2" type="text" autocomplete="address-line2" />
+              </div>
+            </div>
+            <div class="form-row cols-3">
+              <div class="field">
+                <label for="city">City</label>
+                <input id="city" type="text" autocomplete="address-level2" required />
+                <span class="error">Enter your city.</span>
+              </div>
+              <div class="field">
+                <label for="region">Province / State</label>
+                <input id="region" type="text" autocomplete="address-level1" required />
+                <span class="error">Enter your province or state.</span>
+              </div>
+              <div class="field">
+                <label for="postal-code">Postal / ZIP code</label>
+                <input id="postal-code" type="text" autocomplete="postal-code" required />
+                <span class="error">Enter your postal/ZIP code.</span>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <aside class="card summary-card" aria-labelledby="summary-title">
+        <h2 id="summary-title" style="font-size:1.4rem">Order summary</h2>
+        <dl class="summary-rows" id="summary-rows"></dl>
+        <button type="submit" id="submit-btn" class="btn btn-primary btn-lg btn-block" disabled>
+          Pay with Stripe
+        </button>
+        <p class="hint" style="text-align:center;margin:0.9rem 0 0">
+          You'll pay on Stripe's secure checkout page. The final total is confirmed there.
+        </p>
+      </aside>
+    </form>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <a class="brand" href="index.html">
+        <span class="brand__mark"><svg class="icon"><use href="#i-scissors"/></svg></span>
+        CutoutCraft
+      </a>
+      <nav aria-label="Footer">
+        <a href="index.html#studio">Studio</a>
+        <a href="index.html#how-it-works">How it works</a>
+        <a href="index.html#gallery">Gallery</a>
+      </nav>
+      <span>&copy; <span data-year></span> CutoutCraft. Made with cardboard &amp; love.</span>
+    </div>
+  </footer>
+
+  <script src="js/site-config.js"></script>
+  <script src="js/pricing.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/checkout.js"></script>
+</body>
+</html>

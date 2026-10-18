@@ -170,8 +170,11 @@
         <div class="card" style="margin-bottom:1rem" data-item-id="${escapeHtml(item.id)}">
           <p style="margin-top:0">
             ${escapeHtml(item.quantity)} × ${escapeHtml(item.sizeTier)} / ${escapeHtml(item.material)},
-            height ${escapeHtml(item.heightIn)}in
+            height ${escapeHtml(item.heightIn)}in${item.widthIn ? `, width ${escapeHtml(item.widthIn)}in` : ""}
           </p>
+          ${(item.textElements || [])
+            .map((el) => `<p class="hint">Text (${escapeHtml(el.style)}): “${escapeHtml(el.text)}”</p>`)
+            .join("")}
           <div class="item-link">${renderLink(item.downloadUrl, item.downloadExpiresAt)}</div>
         </div>`
         )
@@ -228,7 +231,7 @@
       return "<p><em>No status changes recorded yet.</em></p>";
     }
     return `
-      <table>
+      <div class="table-scroll"><table>
         <thead><tr><th>When</th><th>Change</th><th>By</th><th>IP</th></tr></thead>
         <tbody>
           ${events
@@ -243,7 +246,7 @@
             )
             .join("")}
         </tbody>
-      </table>`;
+      </table></div>`;
   }
 
   async function refreshLinks(orderId) {

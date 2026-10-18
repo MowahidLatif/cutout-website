@@ -51,6 +51,10 @@ function formatOrderDetails(order, { downloadLinks = false } = {}) {
   const itemLines = order.items
     .map((i) => {
       let line = `  - ${i.quantity}x ${i.sizeTier} / ${i.material}, height ${i.heightIn}in`;
+      if (i.widthIn) line += `, width ${i.widthIn}in`;
+      for (const el of i.textElements || []) {
+        line += `\n    text (${el.style}): "${el.text}"`;
+      }
       if (downloadLinks && isValidKey(i.imageKey)) {
         const { url, expiresAt } = createDownloadUrl(i.imageKey);
         line += `\n    image download (expires ${expiresAt.slice(0, 10)}): ${url}`;

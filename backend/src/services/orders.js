@@ -1,10 +1,13 @@
 const pool = require("../db/pool");
-const { calculatePrice, calculateShipping } = require("./pricing");
+const { calculatePrice, calculateShipping, sizeTierForHeight, HEIGHT_RANGE_IN } = require("./pricing");
 const storage = require("./storage");
 
-const VALID_SIZE_TIERS = ["small", "medium", "life_size", "xl"];
 const VALID_MATERIALS = ["cardboard", "coroplast", "foam_board", "acrylic"];
 const VALID_COUNTRIES = ["CA", "US"];
+const WIDTH_RANGE_IN = { min: 6, max: 96 };
+const TEXT_STYLES = ["bubble", "placard", "caption"];
+const MAX_TEXT_ELEMENTS = 3;
+const MAX_TEXT_LENGTH = 80;
 
 function validationError(message) {
   return Object.assign(new Error(message), { code: "VALIDATION_ERROR" });
@@ -33,20 +36,45 @@ function validateOrderInput({ customerEmail, customerPhone, shippingAddress, ite
     throw validationError("At least one order item is required.");
   }
   for (const item of items) {
-    if (!VALID_SIZE_TIERS.includes(item.sizeTier)) {
-      throw validationError(`Invalid sizeTier: ${item.sizeTier}`);
-    }
     if (!VALID_MATERIALS.includes(item.material)) {
       throw validationError(`Invalid material: ${item.material}`);
     }
-    if (!item.quantity || item.quantity < 1) {
-      throw validationError("Each item needs a quantity of at least 1.");
+    if (!Number.isInteger(item.quantity) || item.quantity < 1) {
+      throw validationError("Each item needs a whole-number quantity of at least 1.");
     }
-    if (!item.heightIn || item.heightIn <= 0) {
-      throw validationError("Each item needs a positive heightIn.");
+    const heightIn = Number(item.heightIn);
+    if (!(heightIn >= HEIGHT_RANGE_IN.min && heightIn <= HEIGHT_RANGE_IN.max)) {
+      throw validationError(
+        `Height must be between ${HEIGHT_RANGE_IN.min / 12} and ${HEIGHT_RANGE_IN.max / 12} ft.`
+      );
     }
+    if (item.widthIn !== undefined && item.widthIn !== null) {
+      const widthIn = Number(item.widthIn);
+      if (!(widthIn >= WIDTH_RANGE_IN.min && widthIn <= WIDTH_RANGE_IN.max)) {
+        throw validationError(
+          `Width must be between ${WIDTH_RANGE_IN.min} in and ${WIDTH_RANGE_IN.max / 12} ft.`
+        );
+      }
+    }
+    validateTextElements(item.textElements);
     if (!storage.isValidKey(item.imageKey)) {
       throw validationError("Each item needs an imageKey from POST /api/uploads.");
+    }
+  }
+}
+
+function validateTextElements(textElements) {
+  if (textElements === undefined || textElements === null) return;
+  if (!Array.isArray(textElements) || textElements.length > MAX_TEXT_ELEMENTS) {
+    throw validationError(`Up to ${MAX_TEXT_ELEMENTS} text elements are allowed per standee.`);
+  }
+  for (const el of textElements) {
+    if (!el || !TEXT_STYLES.includes(el.style)) {
+      throw validationError(`Text style must be one of: ${TEXT_STYLES.join(", ")}.`);
+    }
+    const text = typeof el.text === "string" ? el.text.trim() : "";
+    if (text.length < 1 || text.length > MAX_TEXT_LENGTH) {
+      throw validationError(`Each text needs 1–${MAX_TEXT_LENGTH} characters.`);
     }
   }
 }
@@ -69,17 +97,29 @@ async function createOrder(input) {
   let shippingAmount = 0;
 
   for (const item of items) {
+    // The size tier (and so the price) follows from the height. Any
+    // client-sent sizeTier is ignored so a 7 ft standee can't be priced as "small".
+    const heightIn = Number(item.heightIn);
+    const sizeTier = sizeTierForHeight(heightIn);
     const price = await calculatePrice({
-      sizeTier: item.sizeTier,
+      sizeTier,
       material: item.material,
       quantity: item.quantity,
     });
-    pricedItems.push({ ...item, price });
+    const textElements = (item.textElements || []).map((el) => ({ style: el.style, text: el.text.trim() }));
+    pricedItems.push({
+      ...item,
+      heightIn,
+      widthIn: item.widthIn === undefined || item.widthIn === null ? null : Number(item.widthIn),
+      sizeTier,
+      textElements,
+      price,
+    });
     subtotal += price.subtotal;
     itemsTotal += price.total;
     shippingAmount += await calculateShipping({
       country: shippingAddress.country,
-      sizeTier: item.sizeTier,
+      sizeTier,
       quantity: item.quantity,
     });
   }
@@ -107,14 +147,17 @@ async function createOrder(input) {
     for (const item of pricedItems) {
       await client.query(
         `INSERT INTO order_items
-           (order_id, image_key, size_tier, material, height_in, quantity, unit_price, line_total, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+           (order_id, image_key, size_tier, material, height_in, width_in, text_elements,
+            quantity, unit_price, line_total, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           order.id,
           item.imageKey,
           item.sizeTier,
           item.material,
           item.heightIn,
+          item.widthIn,
+          JSON.stringify(item.textElements),
           item.quantity,
           item.price.unitPrice,
           item.price.total,
@@ -179,6 +222,8 @@ async function getOrderById(orderId, { email } = {}) {
       sizeTier: i.size_tier,
       material: i.material,
       heightIn: Number(i.height_in),
+      widthIn: i.width_in === null || i.width_in === undefined ? null : Number(i.width_in),
+      textElements: i.text_elements || [],
       quantity: i.quantity,
       unitPrice: Number(i.unit_price),
       lineTotal: Number(i.line_total),

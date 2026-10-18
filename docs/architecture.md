@@ -10,21 +10,26 @@ locked in, and without any frontend tooling heavier than plain HTML/CSS/JS.
 
 ## 2. User flow (v1)
 
-1. Customer lands on `index.html` — pitch + CTA to "Create Cutout Now"
-2. Optionally reads `pricing.html` — explains tiers, materials, and the
-   quantity discount, pulling the live numbers from `GET /api/pricing-config`
-   so it never goes stale
-3. Customer goes to `create.html`:
-   - Uploads an image
-   - Selects size tier (small / medium / life-size / XL)
-   - Selects material (cardboard / coroplast / foam board / acrylic)
-   - Enters height manually (used to scale the print, not AI-detected)
-   - Selects quantity
-   - Sees a **live price** update (vanilla JS, same formula as the backend)
-   - Enters email, phone, and shipping address
-   - Clicks "Pay" → `POST /api/orders` creates the order, then
-     `POST /api/orders/:id/checkout-session` returns a Stripe redirect URL
-4. Stripe redirects back on success. A webhook (`POST /api/webhooks/stripe`)
+1. Customer lands on `index.html`, a one-page storefront (hero → studio →
+   how it works → gallery). The prices on `pricing.html` come live from
+   `GET /api/pricing-config`.
+2. In the **studio** (`index.html#studio`):
+   - uploads a photo (validated and auto-rotated by the backend right away)
+   - sets the real-world height (1–8 ft, manual, not AI-detected); the
+     size tier and price follow from the height, and the width follows
+     from the photo's proportions unless unlocked
+   - optionally adds up to 3 text elements (speech bubble / placard / caption)
+   - picks the material (Premium Corrugated = `coroplast`; others "coming soon")
+     and the quantity
+   - sees it **to scale** against a 9 ft wall, with a **live price**
+     (vanilla JS, same formula as the backend)
+   - adds it to the **cart** (kept in the browser), and can design more
+3. At `checkout.html` the customer enters email, phone and shipping
+   address, sees the full summary, and clicks "Pay with Stripe". Then
+   `POST /api/orders` creates one order with all the cart items, and
+   `POST /api/orders/:id/checkout-session` returns the Stripe redirect URL.
+4. Stripe redirects back to `order-status.html?order=<id>`, which clears
+   the cart. A webhook (`POST /api/webhooks/stripe`)
    confirms payment server-side — never trust the redirect alone — and
    flips the order to `paid`
 5. Backend sends a fulfillment email (SES) to an internal address with full
