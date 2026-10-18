@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Order Status — Cutout Co.</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a class="site-header__logo" href="index.html">Cutout Co.</a>
+      <nav class="site-header__nav">
+        <a href="pricing.html">Pricing</a>
+        <a href="create.html">Create Cutout</a>
+        <a href="order-status.html">Order Status</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <h1>Check your order status</h1>
+    <p class="lead">Enter your order ID and the email you used at checkout.</p>
+
+    <div id="status" class="status-message error"></div>
+
+    <form id="lookup-form" class="card" novalidate>
+      <div class="form-row cols-2">
+        <div class="field">
+          <label for="order-id">Order ID</label>
+          <input id="order-id" type="text" required />
+        </div>
+        <div class="field">
+          <label for="lookup-email">Email</label>
+          <input id="lookup-email" type="email" required />
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="margin-top:1.25rem">
+        Check status
+      </button>
+    </form>
+
+    <div id="result" class="card" style="margin-top:1.5rem; display:none">
+      <h2 style="margin-top:0">Order <span id="result-id"></span></h2>
+      <p>
+        Status: <span id="result-status" class="order-status-pill"></span>
+      </p>
+      <div id="result-items"></div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    &copy; <span id="year"></span> Cutout Co. All rights reserved.
+  </footer>
+
+  <script src="js/api.js"></script>
+  <script src="js/order-status.js"></script>
+</body>
+</html>

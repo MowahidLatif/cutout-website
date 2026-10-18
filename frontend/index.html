@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Life-Size Cutouts — Custom 2D Standees</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a class="site-header__logo" href="index.html">Cutout Co.</a>
+      <nav class="site-header__nav">
+        <a href="pricing.html">Pricing</a>
+        <a href="create.html">Create Cutout</a>
+        <a href="order-status.html">Order Status</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>The cheapest, highest-quality life-size cutouts, delivered to your door</h1>
+      <p class="lead">
+        Upload a photo, pick your size and material, and we'll turn it into
+        a custom life-size 2D cutout — produced and shipped straight to you.
+      </p>
+      <a class="btn btn-primary" href="create.html">Create Your Cutout Now</a>
+
+      <div class="hero-badges">
+        <div class="hero-badge">
+          <strong>Upload &amp; configure</strong>
+          Pick your photo, size, and material in minutes.
+        </div>
+        <div class="hero-badge">
+          <strong>Transparent pricing</strong>
+          See your price update live as you build your order.
+        </div>
+        <div class="hero-badge">
+          <strong>Shipped to your door</strong>
+          Produced and shipped directly to your address.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    &copy; <span id="year"></span> Cutout Co. All rights reserved.
+  </footer>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
