@@ -28,10 +28,11 @@ locked in, and without any frontend tooling heavier than plain HTML/CSS/JS.
    confirms payment server-side — never trust the redirect alone — and
    flips the order to `paid`
 5. Backend sends a fulfillment email (SES) to an internal address with full
-   order details + image link
+   order details and an expiring (default 30-day) image download link
 6. A human forwards that to the supplier contact, and later updates the
    order's status (`in_production` → `shipped` → `delivered`) through a
-   small admin endpoint
+   small admin endpoint. `admin.html` can issue a fresh image link if the
+   supplier's has expired
 7. Customer can check order status via `order-status.html` (order ID + email)
 
 ## 3. High-level components
@@ -48,6 +49,11 @@ locked in, and without any frontend tooling heavier than plain HTML/CSS/JS.
                   (images)    (payment)   (fulfillment +
                                           customer emails)
 ```
+
+Images always pass through the backend (`POST /api/uploads`) so they
+can be validated and auto-rotated. They're stored on S3 in production or
+on local disk in dev (`STORAGE_DRIVER`), so the whole flow runs without
+AWS.
 
 The frontend can be hosted as plain static files (S3 + CloudFront, or
 anywhere that serves static HTML) — there's no build step and nothing to

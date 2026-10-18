@@ -17,6 +17,7 @@ frontend/
 ├── pricing.html         — pricing explanation page
 ├── create.html          — the order flow
 ├── order-status.html    — order lookup page
+├── admin.html           — owner-only: orders + supplier image links (not in site nav)
 ├── css/
 │   └── style.css        — one shared stylesheet for the whole site
 └── js/
@@ -25,7 +26,8 @@ frontend/
     ├── api.js            — tiny fetch() wrapper for talking to the backend
     ├── create.js          — page logic for create.html (form state, live
     │                       price, submit → checkout)
-    └── order-status.js    — page logic for order-status.html
+    ├── order-status.js    — page logic for order-status.html
+    └── admin.js           — page logic for admin.html
 ```
 
 Keep JS plain `<script src="...">` tags, no modules/bundler required (use
@@ -46,7 +48,11 @@ never out of sync with what `create.html` actually charges.
 ### `create.html` — Order flow
 A single form with:
 
-1. Image upload (`<input type="file" accept="image/*">`) + preview
+1. Image upload (`<input type="file" accept="image/*">`) + preview. The
+   file is sent to `POST /api/uploads` (multipart, via `Api.upload`) **as
+   soon as it's chosen**, so server rejections (too small, not an image,
+   too large) show on the photo field right away. Submit awaits that upload
+   and sends the returned `imageKey`.
 2. Size tier (`<select>`): small / medium / life-size / XL
 3. Material (`<select>`): cardboard / coroplast / foam board / acrylic
 4. Height (`<input type="number">`, inches)
@@ -63,6 +69,13 @@ A single form with:
 ### `order-status.html` — Order lookup
 A small form (order ID + email) that calls `GET /api/orders/:id?email=...`
 and displays the status in plain text.
+
+### `admin.html` — Owner admin
+Asks for the `ADMIN_TOKEN` once (kept in `sessionStorage`, sent as
+`X-Admin-Token`). Lists orders by status. Opening an order shows its
+details and a download link per item, with the expiry date. "Generate
+fresh links" re-signs them. All customer-supplied text is HTML-escaped
+before it's rendered.
 
 ## Live pricing logic
 

@@ -1,5 +1,6 @@
 const pool = require("../db/pool");
 const { calculatePrice, calculateShipping } = require("./pricing");
+const storage = require("./storage");
 
 const VALID_SIZE_TIERS = ["small", "medium", "life_size", "xl"];
 const VALID_MATERIALS = ["cardboard", "coroplast", "foam_board", "acrylic"];
@@ -44,8 +45,8 @@ function validateOrderInput({ customerEmail, customerPhone, shippingAddress, ite
     if (!item.heightIn || item.heightIn <= 0) {
       throw validationError("Each item needs a positive heightIn.");
     }
-    if (!item.imageUrl) {
-      throw validationError("Each item needs an imageUrl.");
+    if (!storage.isValidKey(item.imageKey)) {
+      throw validationError("Each item needs an imageKey from POST /api/uploads.");
     }
   }
 }
@@ -53,6 +54,13 @@ function validateOrderInput({ customerEmail, customerPhone, shippingAddress, ite
 async function createOrder(input) {
   validateOrderInput(input);
   const { customerEmail, customerPhone, shippingAddress, items } = input;
+
+  // A well-formed key isn't enough — it must be a file we actually stored.
+  for (const item of items) {
+    if (!(await storage.fileExists(item.imageKey))) {
+      throw validationError("Uploaded photo not found. Please upload it again.");
+    }
+  }
 
   // Recompute every item's price server-side — never trust a price from the client.
   const pricedItems = [];
@@ -99,11 +107,11 @@ async function createOrder(input) {
     for (const item of pricedItems) {
       await client.query(
         `INSERT INTO order_items
-           (order_id, image_url, size_tier, material, height_in, quantity, unit_price, line_total, notes)
+           (order_id, image_key, size_tier, material, height_in, quantity, unit_price, line_total, notes)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           order.id,
-          item.imageUrl,
+          item.imageKey,
           item.sizeTier,
           item.material,
           item.heightIn,
@@ -157,7 +165,7 @@ async function getOrderById(orderId, { email } = {}) {
     updatedAt: order.updated_at,
     items: itemsResult.rows.map((i) => ({
       id: i.id,
-      imageUrl: i.image_url,
+      imageKey: i.image_key,
       sizeTier: i.size_tier,
       material: i.material,
       heightIn: Number(i.height_in),

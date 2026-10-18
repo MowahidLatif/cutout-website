@@ -23,7 +23,10 @@ backend/
     │   ├── orders.js           — POST /orders, POST /orders/:id/checkout-session,
     │   │                         GET /orders/:id
     │   ├── webhooks.js         — POST /webhooks/stripe
-    │   └── admin.js            — GET /admin/orders, PATCH /admin/orders/:id/status
+    │   ├── files.js            — GET /files/:key (expiring signed image downloads)
+    │   └── admin.js            — X-Admin-Token gate; GET /admin/orders[/:id],
+    │                             POST /admin/orders/:id/download-links,
+    │                             PATCH /admin/orders/:id/status
     ├── services/
     │   ├── pricing.js          — calculatePrice(...) — the authoritative
     │   │                         version of the formula in frontend/js/pricing.js
@@ -31,6 +34,8 @@ backend/
     │   │                         updateOrderStatus — talks to the db pool
     │   │                         directly (no separate repository layer)
     │   ├── stripe.js           — createCheckoutSession, verifyWebhookSignature
+    │   ├── uploads.js          — processUpload: validate, auto-rotate, store
+    │   ├── storage.js          — disk/s3 driver + signed download links
     │   └── email.js            — sendFulfillmentEmail, sendCustomerConfirmation,
     │                             sendShippedNotification (SES in production;
     │                             logs to console in dev if SES isn't configured)
@@ -39,7 +44,8 @@ backend/
         └── migrations/
             ├── 001_init.sql    — creates all tables + seeds starter
             │                     pricing_config / quantity_discount_tiers rows
-            └── 002_shipping.sql — shipping_rates table + orders.shipping_amount
+            ├── 002_shipping.sql — shipping_rates table + orders.shipping_amount
+            └── 003_image_key.sql — order_items.image_url → image_key
                                   (migrate.js re-runs every file, so keep
                                   migrations idempotent)
 ```
@@ -108,6 +114,26 @@ Stripe Checkout session.
   route allowed to mark an order `paid` — never trust the client redirect
 - On `checkout.session.completed`, call `ordersService.markOrderPaid(id)`,
   which also triggers the SES fulfillment + customer confirmation emails
+
+## Image uploads & storage
+
+- `POST /api/uploads` (multer, in memory) → `uploads.processUpload`
+  checks type (by contents, via `sharp`), size and minimum resolution,
+  bakes in EXIF rotation, strips EXIF/GPS, and saves under a random key.
+  Orders store only that key (`order_items.image_key`).
+- `services/storage.js` is the **only** file that knows where images
+  live. `STORAGE_DRIVER=disk` (default: `backend/storage/uploads/`,
+  gitignored, never served statically) or `s3` (production: `S3_BUCKET`,
+  private). Nothing else should touch `fs` or S3 for images.
+- The supplier gets images through `createDownloadUrl(key)`: our own
+  HMAC-signed `GET /api/files/:key` link, valid `DOWNLOAD_LINK_TTL_DAYS`
+  (default 30). We don't use S3 presigned links directly because S3 caps
+  them at 7 days. In s3 mode the route redirects to a 5-minute presigned
+  GET. `PUBLIC_API_URL` must be the backend's public address, or the links
+  in emails won't work.
+- Known gaps: uploads that never become orders aren't cleaned up, and
+  there's no rate limit on `POST /api/uploads` yet.
+- `sharp` needs Node ≥ 20.9 (see `backend/.nvmrc`).
 
 ## Email (SES)
 

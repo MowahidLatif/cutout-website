@@ -28,8 +28,17 @@ cp .env.example .env
 
 ### 2. Backend
 
+Needs Node ≥ 20.9 (for `sharp`). `backend/.nvmrc` pins 22, so `nvm use`
+works.
+
+No AWS needed locally: uploads are stored in `backend/storage/uploads/`
+(gitignored) because `STORAGE_DRIVER` defaults to `disk`, and emails are
+logged to the console. Use `STORAGE_DRIVER=s3` with `S3_BUCKET` in
+production.
+
 ```bash
 cd backend
+nvm use
 npm install
 npm run migrate   # applies backend/src/db/migrations/*.sql
 npm run dev        # starts the API on http://localhost:4000
@@ -58,7 +67,16 @@ serving the frontend separately from the backend (as above), set
 Make sure `FRONTEND_ORIGIN` in `backend/.env` matches wherever you're
 serving the frontend from, so CORS allows it.
 
-### 4. Stripe webhook (local testing)
+### 4. Admin page
+
+Open `frontend/admin.html` (it isn't linked from the site nav) and enter
+`ADMIN_TOKEN` from `backend/.env` (dev default: `dev-admin-token`). From
+there you can see orders, download each order's photo, and generate fresh
+expiring links for the supplier. Set real values for `ADMIN_TOKEN` and
+`FILE_LINK_SECRET` before deploying. The server refuses to start in
+production without them.
+
+### 5. Stripe webhook (local testing)
 
 Use the [Stripe CLI](https://stripe.com/docs/stripe-cli) to forward events
 to your local backend:

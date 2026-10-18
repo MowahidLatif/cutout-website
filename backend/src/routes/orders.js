@@ -1,10 +1,18 @@
 const express = require("express");
+const multer = require("multer");
 const ordersService = require("../services/orders");
 const { createCheckoutSession } = require("../services/stripe");
-const { createPresignedUploadUrl } = require("../services/uploads");
+const { processUpload, maxUploadBytes } = require("../services/uploads");
 const { ok, fail } = require("./_respond");
 
 const router = express.Router();
+
+// Held in memory only long enough to validate it; storage.js decides where
+// the cleaned-up image ends up.
+const parseImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: maxUploadBytes(), files: 1 },
+}).single("image");
 
 router.post("/orders", async (req, res) => {
   try {
@@ -37,22 +45,28 @@ router.post("/orders/:id/checkout-session", async (req, res) => {
   }
 });
 
-router.post("/uploads/presigned-url", async (req, res) => {
-  try {
-    const { fileName, contentType } = req.body;
-    if (!fileName || !contentType) {
-      return fail(
-        res,
-        Object.assign(new Error("fileName and contentType are required."), {
-          code: "VALIDATION_ERROR",
-        })
-      );
+router.post("/uploads", (req, res) => {
+  parseImage(req, res, async (parseErr) => {
+    try {
+      const fieldHint = 'Attach one photo as a multipart field named "image".';
+      if (parseErr) {
+        const message =
+          parseErr.code === "LIMIT_FILE_SIZE"
+            ? `That file is too large. The maximum is ${process.env.UPLOAD_MAX_MB || 25} MB.`
+            : parseErr.code === "LIMIT_UNEXPECTED_FILE" || parseErr.code === "LIMIT_FILE_COUNT"
+              ? fieldHint
+              : `Upload failed: ${parseErr.message}`;
+        throw Object.assign(new Error(message), { code: "VALIDATION_ERROR" });
+      }
+      if (!req.file) {
+        throw Object.assign(new Error(fieldHint), { code: "VALIDATION_ERROR" });
+      }
+      const result = await processUpload(req.file.buffer);
+      ok(res, result, 201);
+    } catch (err) {
+      fail(res, err);
     }
-    const result = await createPresignedUploadUrl({ fileName, contentType });
-    ok(res, result);
-  } catch (err) {
-    fail(res, err);
-  }
+  });
 });
 
 module.exports = router;

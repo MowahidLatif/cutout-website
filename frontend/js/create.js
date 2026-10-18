@@ -5,8 +5,12 @@
  */
 (function () {
   let pricingConfig = null; // { rates, discountTiers, shippingRates }
-  let uploadedImageUrl = null;
   let selectedFile = null;
+  // The upload starts as soon as a photo is chosen, so problems (too small,
+  // not an image) show up right away instead of at payment.
+  let uploadPromise = null; // resolves to the imageKey, rejects with the server's reason
+
+  const MAX_UPLOAD_MB = 25; // keep in step with UPLOAD_MAX_MB on the backend
 
   const form = document.getElementById("order-form");
   const statusEl = document.getElementById("form-status");
@@ -32,6 +36,8 @@
   const dropzoneLabel = document.getElementById("dropzone-label");
   const imageInput = document.getElementById("image-input");
   const imagePreview = document.getElementById("image-preview");
+  const imageError = document.getElementById("image-error");
+  const DEFAULT_IMAGE_ERROR = imageError.textContent;
 
   dropzone.addEventListener("click", () => imageInput.click());
   dropzone.addEventListener("dragover", (e) => e.preventDefault());
@@ -49,31 +55,50 @@
 
   function handleFile(file) {
     selectedFile = file;
-    uploadedImageUrl = null;
     const reader = new FileReader();
     reader.onload = (e) => {
       imagePreview.src = e.target.result;
       imagePreview.style.display = "block";
-      dropzoneLabel.textContent = file.name;
       dropzone.classList.add("has-image");
     };
     reader.readAsDataURL(file);
-    clearFieldError(document.getElementById("image-input"));
-    recalculatePrice();
+    clearFieldError(imageInput);
+
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      uploadPromise = Promise.reject(
+        new Error(`That file is too large. The maximum is ${MAX_UPLOAD_MB} MB.`)
+      );
+    } else {
+      dropzoneLabel.textContent = `Uploading ${file.name}…`;
+      uploadPromise = uploadImage(file);
+    }
+
+    const thisUpload = uploadPromise;
+    thisUpload.then(
+      () => {
+        if (uploadPromise !== thisUpload) return; // a newer file was chosen
+        dropzoneLabel.textContent = `✓ ${file.name}`;
+      },
+      (err) => {
+        if (uploadPromise !== thisUpload) return;
+        dropzoneLabel.textContent = file.name;
+        showImageError(err.message);
+      }
+    );
   }
 
   async function uploadImage(file) {
-    // Ask the backend for a presigned S3 URL, then PUT the file directly.
-    const presign = await Api.post("/uploads/presigned-url", {
-      fileName: file.name,
-      contentType: file.type,
-    });
-    await fetch(presign.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": file.type },
-      body: file,
-    });
-    return presign.publicUrl;
+    // The backend validates, auto-rotates and stores the photo, and returns
+    // the key the order refers to it by.
+    const formData = new FormData();
+    formData.append("image", file);
+    const result = await Api.upload("/uploads", formData);
+    return result.imageKey;
+  }
+
+  function showImageError(message) {
+    imageError.textContent = message || DEFAULT_IMAGE_ERROR;
+    setFieldError(imageInput, true);
   }
 
   // ---------- Live pricing ----------
@@ -147,10 +172,8 @@
     let valid = true;
 
     if (!selectedFile) {
-      setFieldError(imageInput, true);
+      showImageError();
       valid = false;
-    } else {
-      clearFieldError(imageInput);
     }
 
     const requiredTextFields = [
@@ -200,11 +223,18 @@
     submitBtn.disabled = true;
     submitBtn.textContent = "Processing…";
 
+    let imageKey;
     try {
-      if (!uploadedImageUrl) {
-        uploadedImageUrl = await uploadImage(selectedFile);
-      }
+      imageKey = await uploadPromise;
+    } catch (err) {
+      showImageError(err.message);
+      showStatus("There's a problem with your photo: " + err.message, "error");
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Pay with Stripe";
+      return;
+    }
 
+    try {
       const order = await Api.post("/orders", {
         customerEmail: fields.email.value.trim(),
         customerPhone: fields.phone.value.trim(),
@@ -218,7 +248,7 @@
         },
         items: [
           {
-            imageUrl: uploadedImageUrl,
+            imageKey,
             sizeTier: fields.sizeTier.value,
             material: fields.material.value,
             heightIn: Number(fields.height.value),

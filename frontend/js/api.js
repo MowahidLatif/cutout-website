@@ -9,40 +9,48 @@
 (function () {
   const BASE_URL = window.API_BASE_URL || "/api";
 
-  async function request(path, options) {
+  async function request(path, { method, body, headers }) {
+    const isForm = body instanceof FormData;
     const res = await fetch(BASE_URL + path, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
+      method,
+      // Let the browser set the multipart boundary for FormData uploads.
+      headers: { ...(isForm ? {} : { "Content-Type": "application/json" }), ...headers },
+      body: isForm || body === undefined ? body : JSON.stringify(body),
     });
 
-    let body;
+    let resBody;
     try {
-      body = await res.json();
+      resBody = await res.json();
     } catch (e) {
-      body = null;
+      resBody = null;
     }
 
-    if (!res.ok || (body && body.error)) {
+    if (!res.ok || (resBody && resBody.error)) {
       const message =
-        (body && body.error && body.error.message) ||
+        (resBody && resBody.error && resBody.error.message) ||
         `Request failed (${res.status})`;
-      throw new Error(message);
+      throw Object.assign(new Error(message), { status: res.status });
     }
 
-    return body ? body.data : null;
+    return resBody ? resBody.data : null;
   }
 
-  function get(path) {
-    return request(path, { method: "GET" });
+  function get(path, headers) {
+    return request(path, { method: "GET", headers });
   }
 
-  function post(path, data) {
-    return request(path, { method: "POST", body: JSON.stringify(data) });
+  function post(path, data, headers) {
+    return request(path, { method: "POST", body: data, headers });
   }
 
-  function patch(path, data) {
-    return request(path, { method: "PATCH", body: JSON.stringify(data) });
+  function patch(path, data, headers) {
+    return request(path, { method: "PATCH", body: data, headers });
   }
 
-  window.Api = { get, post, patch };
+  /** POSTs a FormData (multipart) body, e.g. a file upload. */
+  function upload(path, formData, headers) {
+    return request(path, { method: "POST", body: formData, headers });
+  }
+
+  window.Api = { get, post, patch, upload };
 })();

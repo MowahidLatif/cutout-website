@@ -20,8 +20,11 @@ who produces and ships the product directly to the customer.
   calls a service function, returns JSON. Keep it boring and readable.
 - **Database: PostgreSQL.**
 - **Payments: Stripe Checkout** (hosted page — no custom card form).
-- **Cloud: AWS** — S3 for uploaded images, RDS for Postgres, SES for email
-  (SES calls are stubbed/logged in dev; see `backend/src/services/email.js`).
+- **Cloud: AWS** — S3 for uploaded images in production (local disk in dev
+  via `STORAGE_DRIVER=disk`; see `backend/src/services/storage.js`), RDS
+  for Postgres, SES for email (SES calls are stubbed/logged in dev; see
+  `backend/src/services/email.js`). The whole order flow runs locally
+  without AWS credentials.
 
 ## Before you write code, read the matching doc
 
@@ -40,8 +43,9 @@ who produces and ships the product directly to the customer.
 - **No AI height detection.** Height is a manual number input.
 - **No automated supplier integration.** Fulfillment is a manual email sent
   via SES when an order is paid; a human forwards it to the supplier.
-- **No background removal / image processing pipeline yet.** Uploaded
-  images are stored and used as-is.
+- **No background removal / image processing pipeline yet.** Uploads are
+  only validated (type by contents, size, min resolution) and
+  auto-rotated from EXIF. No other edits.
 - **Pricing is config-driven, not hardcoded**: size tier × material
   multiplier, with a quantity-discount curve. Both live in the database so
   they can change without a redeploy.

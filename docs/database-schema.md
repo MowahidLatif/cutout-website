@@ -28,7 +28,7 @@ runnable version of this.
 |---|---|---|
 | id | uuid, pk | |
 | order_id | uuid, fk → orders.id | |
-| image_url | text | S3 object URL |
+| image_key | text | storage key from `POST /api/uploads`, e.g. `<uuid>.jpg`. Not a URL, so it works with either storage driver. Renamed from `image_url` in `003_image_key.sql` |
 | size_tier | text (enum) | `small`, `medium`, `life_size`, `xl` |
 | material | text (enum) | `cardboard`, `coroplast`, `foam_board`, `acrylic` |
 | height_in | numeric(6,2) | manually entered by customer |

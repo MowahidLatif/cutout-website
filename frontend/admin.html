@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Admin — Cutout Co.</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a class="site-header__logo" href="index.html">Cutout Co.</a>
+      <nav class="site-header__nav">
+        <a href="admin.html">Admin</a>
+        <a href="#" id="sign-out">Sign out</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <h1>Orders</h1>
+    <p class="lead">Forward paid orders to the supplier. Image links expire; generate a fresh one any time.</p>
+
+    <div id="status" class="status-message error"></div>
+
+    <form id="token-form" class="card" style="display:none" novalidate>
+      <div class="field">
+        <label for="admin-token">Admin token</label>
+        <input id="admin-token" type="password" autocomplete="current-password" required />
+        <span class="hint">The ADMIN_TOKEN value from the backend's .env. Kept for this browser tab only.</span>
+      </div>
+      <button type="submit" class="btn btn-primary" style="margin-top:1.25rem">Sign in</button>
+    </form>
+
+    <section id="orders-section" style="display:none">
+      <div class="field" style="max-width:16rem">
+        <label for="status-filter">Status</label>
+        <select id="status-filter">
+          <option value="">All</option>
+          <option value="paid" selected>Paid (to forward)</option>
+          <option value="pending_payment">Payment pending</option>
+          <option value="in_production">In production</option>
+          <option value="shipped">Shipped</option>
+          <option value="delivered">Delivered</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+
+      <table style="margin-top:1rem">
+        <thead>
+          <tr>
+            <th>Created</th>
+            <th>Customer</th>
+            <th>Status</th>
+            <th>Total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="orders-body"></tbody>
+      </table>
+
+      <div id="order-detail" class="card" style="display:none; margin-top:1.5rem"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    &copy; <span id="year"></span> Cutout Co. All rights reserved.
+  </footer>
+
+  <script src="js/api.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@
  * rest of the order flow keeps working without AWS credentials on hand.
  */
 const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
+const { createDownloadUrl, isValidKey } = require("./storage");
 
 function sesConfigured() {
   return Boolean(
@@ -40,13 +41,22 @@ async function sendEmail({ to, subject, body }) {
   );
 }
 
-function formatOrderDetails(order) {
+/**
+ * @param {Object} order
+ * @param {Object} [options]
+ * @param {boolean} [options.downloadLinks] include expiring image download
+ *   links — only for the supplier-bound fulfillment email
+ */
+function formatOrderDetails(order, { downloadLinks = false } = {}) {
   const itemLines = order.items
-    .map(
-      (i) =>
-        `  - ${i.quantity}x ${i.sizeTier} / ${i.material}, height ${i.heightIn}in\n` +
-        `    image: ${i.imageUrl}`
-    )
+    .map((i) => {
+      let line = `  - ${i.quantity}x ${i.sizeTier} / ${i.material}, height ${i.heightIn}in`;
+      if (downloadLinks && isValidKey(i.imageKey)) {
+        const { url, expiresAt } = createDownloadUrl(i.imageKey);
+        line += `\n    image download (expires ${expiresAt.slice(0, 10)}): ${url}`;
+      }
+      return line;
+    })
     .join("\n");
 
   const addr = order.shippingAddress;
@@ -69,7 +79,9 @@ async function sendFulfillmentEmail(order) {
   await sendEmail({
     to,
     subject: `New paid order ${order.id} — forward to supplier`,
-    body: formatOrderDetails(order),
+    body:
+      formatOrderDetails(order, { downloadLinks: true }) +
+      `\n\nLink expired? Open the order in admin.html and click "Generate fresh links".`,
   });
 }
 
