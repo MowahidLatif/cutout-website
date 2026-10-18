@@ -1,54 +1,72 @@
 /**
  * Page logic for admin.html: sign in with the shared admin token, list
- * orders, and show/refresh the expiring image download links to forward
- * to the supplier.
+ * orders, show/refresh the expiring image download links to forward to
+ * the supplier, and change order status (recorded in the order history).
+ *
+ * The token and name live in sessionStorage only: they're gone when this
+ * tab closes, and the token is only ever sent in a header, never in a URL.
  */
 (function () {
   document.getElementById("year").textContent = new Date().getFullYear();
 
   const TOKEN_KEY = "cutoutAdminToken";
+  const NAME_KEY = "cutoutAdminName";
   const statusEl = document.getElementById("status");
   const tokenForm = document.getElementById("token-form");
+  const tokenInput = document.getElementById("admin-token");
+  const nameInput = document.getElementById("admin-name");
   const ordersSection = document.getElementById("orders-section");
   const ordersBody = document.getElementById("orders-body");
   const statusFilter = document.getElementById("status-filter");
   const detailEl = document.getElementById("order-detail");
 
-  // ---------- Token ----------
-  let memoryToken = null; // fallback if sessionStorage is blocked
-  function getToken() {
+  const STATUS_OPTIONS = ["in_production", "shipped", "delivered", "cancelled"];
+
+  // ---------- Session-only credentials ----------
+  const memory = {}; // fallback if sessionStorage is blocked
+  function sessionGet(key) {
     try {
-      return sessionStorage.getItem(TOKEN_KEY);
+      return sessionStorage.getItem(key);
     } catch (e) {
-      return memoryToken;
+      return memory[key] || null;
     }
   }
-  function setToken(token) {
-    memoryToken = token;
+  function sessionSet(key, value) {
+    memory[key] = value;
     try {
-      if (token) sessionStorage.setItem(TOKEN_KEY, token);
-      else sessionStorage.removeItem(TOKEN_KEY);
+      if (value) sessionStorage.setItem(key, value);
+      else sessionStorage.removeItem(key);
     } catch (e) {
       // Storage blocked — the in-memory copy still works for this page load.
     }
   }
 
   function authHeaders() {
-    return { "X-Admin-Token": getToken() || "" };
+    return {
+      "X-Admin-Token": sessionGet(TOKEN_KEY) || "",
+      "X-Admin-Name": sessionGet(NAME_KEY) || "",
+    };
   }
 
   function showSignIn(message) {
-    setToken(null);
+    sessionSet(TOKEN_KEY, null);
     ordersSection.style.display = "none";
     tokenForm.style.display = "block";
+    nameInput.value = sessionGet(NAME_KEY) || "";
     if (message) showStatus(message);
   }
 
   tokenForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    const token = document.getElementById("admin-token").value.trim();
-    if (!token) return;
-    setToken(token);
+    const token = tokenInput.value.trim();
+    const name = nameInput.value.trim();
+    if (!token || !name) {
+      showStatus("Enter your name and the admin token.");
+      return;
+    }
+    sessionSet(TOKEN_KEY, token);
+    sessionSet(NAME_KEY, name);
+    tokenInput.value = "";
     hideStatus();
     tokenForm.style.display = "none";
     loadOrders();
@@ -59,13 +77,16 @@
     showSignIn();
   });
 
-  /** Wraps an admin API call so a 401 sends you back to the sign-in form. */
+  /** Wraps an admin API call so a 401/429 sends you back to the sign-in form. */
   async function adminCall(fn) {
     try {
       return await fn();
     } catch (err) {
       if (err.status === 401) {
         showSignIn("That admin token wasn't accepted. Please sign in again.");
+      } else if (err.status === 429) {
+        const minutes = err.retryAfter ? Math.ceil(err.retryAfter / 60) : 15;
+        showSignIn(`Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`);
       } else {
         showStatus(err.message);
       }
@@ -74,11 +95,14 @@
   }
 
   // ---------- Orders list ----------
-  statusFilter.addEventListener("change", loadOrders);
+  statusFilter.addEventListener("change", () => loadOrders());
 
-  async function loadOrders() {
-    hideStatus();
-    detailEl.style.display = "none";
+  /** @param {{ keepDetail?: boolean }} [options] keepDetail refreshes the list without closing the open order */
+  async function loadOrders({ keepDetail = false } = {}) {
+    if (!keepDetail) {
+      hideStatus();
+      detailEl.style.display = "none";
+    }
     const query = statusFilter.value ? `?status=${encodeURIComponent(statusFilter.value)}` : "";
     let orders;
     try {
@@ -153,11 +177,73 @@
         )
         .join("")}
       <button type="button" class="btn btn-secondary" id="refresh-links">Generate fresh links</button>
+
+      <h3>Change status</h3>
+      <div class="form-row cols-2">
+        <div class="field">
+          <label for="new-status">New status</label>
+          <select id="new-status">
+            ${STATUS_OPTIONS.map(
+              (s) => `<option value="${s}"${s === order.status ? " disabled" : ""}>${s}</option>`
+            ).join("")}
+          </select>
+          <span class="hint">"shipped" also emails the customer.</span>
+        </div>
+      </div>
+      <button type="button" class="btn btn-primary" id="update-status" style="margin-top:0.75rem">Update status</button>
+
+      <h3>History</h3>
+      ${renderHistory(order.statusEvents || [])}
     `;
     detailEl.style.display = "block";
     detailEl.scrollIntoView({ behavior: "smooth", block: "start" });
 
+    const select = document.getElementById("new-status");
+    const firstEnabled = STATUS_OPTIONS.find((s) => s !== order.status);
+    select.value = firstEnabled;
+
     document.getElementById("refresh-links").addEventListener("click", () => refreshLinks(order.id));
+    document.getElementById("update-status").addEventListener("click", () =>
+      updateStatus(order.id, select.value)
+    );
+  }
+
+  async function updateStatus(orderId, status) {
+    if (!window.confirm(`Change this order's status to "${status}"?`)) return;
+    hideStatus();
+    try {
+      await adminCall(() =>
+        Api.patch(`/admin/orders/${encodeURIComponent(orderId)}/status`, { status }, authHeaders())
+      );
+    } catch (err) {
+      return;
+    }
+    await openOrder(orderId);
+    showStatus(`Status changed to ${status}.`, "success");
+    loadOrders({ keepDetail: true });
+  }
+
+  function renderHistory(events) {
+    if (!events.length) {
+      return "<p><em>No status changes recorded yet.</em></p>";
+    }
+    return `
+      <table>
+        <thead><tr><th>When</th><th>Change</th><th>By</th><th>IP</th></tr></thead>
+        <tbody>
+          ${events
+            .map(
+              (ev) => `
+            <tr>
+              <td>${escapeHtml(new Date(ev.createdAt).toLocaleString())}</td>
+              <td>${escapeHtml(ev.fromStatus || "—")} → ${escapeHtml(ev.toStatus)}</td>
+              <td title="${escapeHtml(ev.userAgent || "")}">${escapeHtml(ev.changedBy)}</td>
+              <td>${escapeHtml(ev.ip || "—")}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
   }
 
   async function refreshLinks(orderId) {
@@ -222,7 +308,7 @@
   }
 
   // ---------- Init ----------
-  if (getToken()) {
+  if (sessionGet(TOKEN_KEY) && sessionGet(NAME_KEY)) {
     loadOrders();
   } else {
     showSignIn();

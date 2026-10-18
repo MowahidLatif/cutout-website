@@ -112,11 +112,33 @@ This is the only path allowed to mark an order paid.
 
 ## Admin endpoints
 
-Every `/admin/*` request needs an `X-Admin-Token` header equal to the
-`ADMIN_TOKEN` env var, otherwise 401 `UNAUTHORIZED`. `frontend/admin.html`
-asks for the token once and keeps it in `sessionStorage`. The server
-refuses to start with `NODE_ENV=production` while `ADMIN_TOKEN` or
-`FILE_LINK_SECRET` is unset or still the dev default.
+There's one operator and one shared secret. There are no accounts for
+either admins or customers.
+
+- **Header only:** every `/admin/*` request needs `X-Admin-Token` equal to
+  `ADMIN_TOKEN`, otherwise 401 `UNAUTHORIZED`. A token sent in the query
+  string (`?token=`, `?admin_token=`, `?adminToken=`) is rejected with 400,
+  so it never ends up in URLs, logs or browser history.
+- **Strength:** in production the server refuses to start unless
+  `ADMIN_TOKEN` (and `FILE_LINK_SECRET`) is set, isn't the dev default, and
+  is at least 32 characters. Generate one with `openssl rand -base64 48`.
+- **Comparison:** both sides are SHA-256 hashed, then compared with
+  `crypto.timingSafeEqual`, so neither timing nor length leaks.
+- **Rate limit:** 10 failed attempts per 15 minutes per client IP. After
+  that every admin request from that IP, even one with the right token,
+  gets 429 `RATE_LIMITED` with `Retry-After` (seconds) until the window
+  ends. Failures are logged with the IP, never the submitted value. The
+  counters are in memory, so a restart clears them.
+- **HTTPS:** with `NODE_ENV=production`, plain-HTTP admin requests get 403
+  `FORBIDDEN`. TLS is terminated by Caddy, and the app trusts its
+  `X-Forwarded-Proto`/`X-Forwarded-For` according to `TRUST_PROXY`.
+- **Operator name:** `X-Admin-Name` (optional, max 80 characters, default
+  `admin`) is recorded on status changes. It's self-declared, since one
+  shared secret can't prove who someone is. The IP and user agent are
+  recorded alongside it.
+
+`frontend/admin.html` asks for the name and token once per browser tab
+and keeps them in `sessionStorage`, which is cleared when the tab closes.
 
 ### `GET /admin/orders`
 Lists orders, filterable by `status`, for the manual fulfillment workflow.
@@ -124,7 +146,9 @@ Lists orders, filterable by `status`, for the manual fulfillment workflow.
 ### `GET /admin/orders/:id`
 The full order (same shape as the customer lookup). Each item also has
 `downloadUrl` and `downloadExpiresAt`, a freshly signed link valid for
-`DOWNLOAD_LINK_TTL_DAYS` (default 30).
+`DOWNLOAD_LINK_TTL_DAYS` (default 30). Also includes `statusEvents`, the
+order's status history, oldest first:
+`[{ "fromStatus", "toStatus", "changedBy", "ip", "userAgent", "createdAt" }]`.
 
 ### `POST /admin/orders/:id/download-links`
 Issues new links for every item in the order:
@@ -134,4 +158,9 @@ expired.
 
 ### `PATCH /admin/orders/:id/status`
 Updates an order's status (`in_production`, `shipped`, `delivered`,
-`cancelled`). Triggers a customer email on `shipped`.
+`cancelled`). Triggers a customer email on `shipped`. Setting the status
+the order already has is a 400, which also stops a duplicate "shipped"
+email. Every change writes an `order_status_events` row (`X-Admin-Name`,
+IP, user agent) in the same transaction, plus a console line:
+`[admin] <name>@<ip> changed order <id> <from> → <to>`. The Stripe
+webhook's `pending_payment → paid` is recorded too, as `stripe-webhook`.

@@ -69,12 +69,41 @@ serving the frontend from, so CORS allows it.
 
 ### 4. Admin page
 
-Open `frontend/admin.html` (it isn't linked from the site nav) and enter
-`ADMIN_TOKEN` from `backend/.env` (dev default: `dev-admin-token`). From
-there you can see orders, download each order's photo, and generate fresh
-expiring links for the supplier. Set real values for `ADMIN_TOKEN` and
-`FILE_LINK_SECRET` before deploying. The server refuses to start in
-production without them.
+Open `frontend/admin.html` (it isn't linked from the site nav). Enter
+your name and `ADMIN_TOKEN` from `backend/.env` (dev default:
+`dev-admin-token`). Both are kept only for that browser tab. From there
+you can see orders, download each order's photo, generate fresh expiring
+links for the supplier, and change an order's status. Every status change
+is recorded in the order's history with your name and IP.
+
+### Deploying (production checklist)
+
+```bash
+openssl rand -base64 48   # → ADMIN_TOKEN
+openssl rand -base64 48   # → FILE_LINK_SECRET (a different value)
+```
+
+In `backend/.env` on the server: `NODE_ENV=production`, both secrets above
+(the server refuses to start if either is missing, a dev default, or
+under 32 characters), `HOST=127.0.0.1`, `TRUST_PROXY=loopback`, and
+`PUBLIC_API_URL=https://<your domain>`.
+
+Put Caddy in front for HTTPS. It gets certificates automatically and
+forwards `X-Forwarded-For`/`X-Forwarded-Proto` by default:
+
+```
+yourdomain.com {
+  handle /api/* {
+    reverse_proxy 127.0.0.1:4000
+  }
+  handle {
+    root * /path/to/cutout-website/frontend
+    file_server
+  }
+}
+```
+
+Admin requests that don't arrive over HTTPS are refused in production.
 
 ### 5. Stripe webhook (local testing)
 

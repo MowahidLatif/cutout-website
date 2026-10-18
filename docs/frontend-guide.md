@@ -71,11 +71,18 @@ A small form (order ID + email) that calls `GET /api/orders/:id?email=...`
 and displays the status in plain text.
 
 ### `admin.html` — Owner admin
-Asks for the `ADMIN_TOKEN` once (kept in `sessionStorage`, sent as
-`X-Admin-Token`). Lists orders by status. Opening an order shows its
-details and a download link per item, with the expiry date. "Generate
-fresh links" re-signs them. All customer-supplied text is HTML-escaped
-before it's rendered.
+Asks for the operator's name and the `ADMIN_TOKEN` once per tab. Both
+are kept in `sessionStorage` only and sent as `X-Admin-Name` /
+`X-Admin-Token` headers, never in a URL. A 401 sends you back to sign-in,
+and a 429 shows how many minutes to wait. Lists orders by status. Opening
+an order shows:
+
+- its details, and a download link per item with the expiry date
+  ("Generate fresh links" re-signs them)
+- a status changer (with a confirm step; "shipped" emails the customer)
+- the status history: when, from → to, who, IP
+
+All customer-supplied text is HTML-escaped before it's rendered.
 
 ## Live pricing logic
 

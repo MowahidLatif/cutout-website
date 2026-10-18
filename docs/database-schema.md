@@ -97,6 +97,21 @@ supplier quote, the rest are scaled placeholders.
 | raw_payload | jsonb | raw webhook payload, for debugging/audit |
 | created_at | timestamptz | |
 
+## `order_status_events`
+
+The audit trail of every status change (`004_order_status_events.sql`).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid, pk | |
+| order_id | uuid, fk → orders.id | cascade delete; indexed with `created_at` |
+| from_status | text | nullable |
+| to_status | text | |
+| changed_by | text | self-declared admin name (`X-Admin-Name`), or `stripe-webhook` |
+| ip | text | client IP (real IP via Caddy, see `TRUST_PROXY`); null for the webhook |
+| user_agent | text | null for the webhook |
+| created_at | timestamptz | |
+
 ## Notes
 
 - Status/tier/material columns use `text` with a `CHECK` constraint rather

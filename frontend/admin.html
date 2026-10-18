@@ -25,10 +25,17 @@
     <div id="status" class="status-message error"></div>
 
     <form id="token-form" class="card" style="display:none" novalidate>
-      <div class="field">
-        <label for="admin-token">Admin token</label>
-        <input id="admin-token" type="password" autocomplete="current-password" required />
-        <span class="hint">The ADMIN_TOKEN value from the backend's .env. Kept for this browser tab only.</span>
+      <div class="form-row cols-2">
+        <div class="field">
+          <label for="admin-name">Your name</label>
+          <input id="admin-name" type="text" autocomplete="name" maxlength="80" required />
+          <span class="hint">Recorded in the order history when you change a status.</span>
+        </div>
+        <div class="field">
+          <label for="admin-token">Admin token</label>
+          <input id="admin-token" type="password" autocomplete="current-password" required />
+          <span class="hint">The ADMIN_TOKEN value from the backend's .env. Kept for this browser tab only.</span>
+        </div>
       </div>
       <button type="submit" class="btn btn-primary" style="margin-top:1.25rem">Sign in</button>
     </form>

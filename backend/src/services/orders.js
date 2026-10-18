@@ -184,28 +184,83 @@ async function setStripeSession(orderId, sessionId) {
 }
 
 async function markOrderPaid(orderId, paymentIntentId) {
+  // One statement, so the audit event is written only when the status
+  // actually changed — Stripe webhook retries don't add duplicate events.
   await pool.query(
-    `UPDATE orders
-     SET status = 'paid', stripe_payment_intent_id = $1, updated_at = now()
-     WHERE id = $2 AND status = 'pending_payment'`,
+    `WITH updated AS (
+       UPDATE orders
+       SET status = 'paid', stripe_payment_intent_id = $1, updated_at = now()
+       WHERE id = $2 AND status = 'pending_payment'
+       RETURNING id
+     )
+     INSERT INTO order_status_events (order_id, from_status, to_status, changed_by)
+     SELECT id, 'pending_payment', 'paid', 'stripe-webhook' FROM updated`,
     [paymentIntentId, orderId]
   );
   return getOrderById(orderId);
 }
 
-async function updateOrderStatus(orderId, status) {
+/**
+ * @param {string} orderId
+ * @param {string} status
+ * @param {{ name: string, ip: string, userAgent: string }} actor who made the change, for the audit log
+ * @returns {Promise<{ order: Object, fromStatus: string }>}
+ */
+async function updateOrderStatus(orderId, status, actor) {
   const validStatuses = ["in_production", "shipped", "delivered", "cancelled"];
   if (!validStatuses.includes(status)) {
     throw validationError(`Invalid status: ${status}`);
   }
-  const result = await pool.query(
-    "UPDATE orders SET status = $1, updated_at = now() WHERE id = $2 RETURNING id",
-    [status, orderId]
-  );
-  if (result.rowCount === 0) {
-    throw notFoundError("Order not found.");
+
+  const client = await pool.connect();
+  let fromStatus;
+  try {
+    await client.query("BEGIN");
+    const current = await client.query("SELECT status FROM orders WHERE id = $1 FOR UPDATE", [orderId]);
+    if (current.rowCount === 0) {
+      throw notFoundError("Order not found.");
+    }
+    fromStatus = current.rows[0].status;
+    if (fromStatus === status) {
+      // Also stops a repeated "shipped" from re-emailing the customer.
+      throw validationError(`Order is already ${status}.`);
+    }
+
+    await client.query("UPDATE orders SET status = $1, updated_at = now() WHERE id = $2", [
+      status,
+      orderId,
+    ]);
+    await client.query(
+      `INSERT INTO order_status_events
+         (order_id, from_status, to_status, changed_by, ip, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [orderId, fromStatus, status, actor.name, actor.ip, actor.userAgent]
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-  return getOrderById(orderId);
+
+  return { order: await getOrderById(orderId), fromStatus };
+}
+
+async function getStatusEvents(orderId) {
+  const result = await pool.query(
+    `SELECT from_status, to_status, changed_by, ip, user_agent, created_at
+     FROM order_status_events WHERE order_id = $1 ORDER BY created_at`,
+    [orderId]
+  );
+  return result.rows.map((e) => ({
+    fromStatus: e.from_status,
+    toStatus: e.to_status,
+    changedBy: e.changed_by,
+    ip: e.ip,
+    userAgent: e.user_agent,
+    createdAt: e.created_at,
+  }));
 }
 
 async function listOrders({ status } = {}) {
@@ -232,5 +287,6 @@ module.exports = {
   setStripeSession,
   markOrderPaid,
   updateOrderStatus,
+  getStatusEvents,
   listOrders,
 };

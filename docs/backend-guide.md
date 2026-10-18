@@ -45,7 +45,8 @@ backend/
             ├── 001_init.sql    — creates all tables + seeds starter
             │                     pricing_config / quantity_discount_tiers rows
             ├── 002_shipping.sql — shipping_rates table + orders.shipping_amount
-            └── 003_image_key.sql — order_items.image_url → image_key
+            ├── 003_image_key.sql — order_items.image_url → image_key
+            └── 004_order_status_events.sql — status-change audit log
                                   (migrate.js re-runs every file, so keep
                                   migrations idempotent)
 ```
@@ -134,6 +135,23 @@ Stripe Checkout session.
 - Known gaps: uploads that never become orders aren't cleaned up, and
   there's no rate limit on `POST /api/uploads` yet.
 - `sharp` needs Node ≥ 20.9 (see `backend/.nvmrc`).
+
+## Admin access & deployment
+
+- `/api/admin/*` is gated by one shared secret (`ADMIN_TOKEN`) in the
+  `X-Admin-Token` header, with a per-IP failed-attempt limit. Details are
+  in `api-spec.md`. All of that lives in `routes/admin.js`, so there's no
+  auth framework to maintain.
+- Production runs behind **Caddy**, which terminates HTTPS:
+  - `HOST=127.0.0.1`: the app only listens on localhost, so nobody can
+    bypass Caddy and talk plain HTTP to port 4000.
+  - `TRUST_PROXY` (default `loopback`): which proxy's `X-Forwarded-For` /
+    `X-Forwarded-Proto` to believe. That gives the rate limit and audit log
+    the real client IP, and lets `req.secure` work. Never set it to `true`
+    on a server reachable directly from the internet, because clients
+    could then spoof their IP.
+  - With `NODE_ENV=production`, admin requests that didn't come over
+    HTTPS are refused.
 
 ## Email (SES)
 

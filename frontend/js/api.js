@@ -29,7 +29,10 @@
       const message =
         (resBody && resBody.error && resBody.error.message) ||
         `Request failed (${res.status})`;
-      throw Object.assign(new Error(message), { status: res.status });
+      throw Object.assign(new Error(message), {
+        status: res.status,
+        retryAfter: Number(res.headers.get("Retry-After")) || null, // seconds, on 429
+      });
     }
 
     return resBody ? resBody.data : null;
