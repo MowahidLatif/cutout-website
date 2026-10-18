@@ -54,6 +54,7 @@ function formatOrderDetails(order) {
     `Order ID: ${order.id}\n` +
     `Customer: ${order.customerEmail} / ${order.customerPhone}\n` +
     `Shipping to: ${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}, ${addr.city}, ${addr.region} ${addr.postalCode}, ${addr.country}\n` +
+    `Shipping: $${order.shippingAmount.toFixed(2)}\n` +
     `Total: $${order.totalPrice.toFixed(2)}\n\n` +
     `Items:\n${itemLines}`
   );

@@ -6,9 +6,9 @@ described in `backend-guide.md`.
 ## Public endpoints
 
 ### `GET /pricing-config`
-Returns current `pricing_config` rows and `quantity_discount_tiers`, so
-both `pricing.html` and `create.html` can compute prices without
-hardcoding rates.
+Returns current `pricing_config` rows, `quantity_discount_tiers` and
+`shipping_rates`, so both `pricing.html` and `create.html` can compute
+prices without hardcoding rates.
 
 ```json
 {
@@ -18,6 +18,9 @@ hardcoding rates.
     ],
     "discountTiers": [
       { "minQty": 2, "maxQty": 4, "discountPct": 5 }
+    ],
+    "shippingRates": [
+      { "country": "CA", "sizeTier": "life_size", "firstUnitRate": 122.00, "additionalUnitRate": 60.00 }
     ]
   },
   "error": null
@@ -47,8 +50,12 @@ Request:
 }
 ```
 
+`shippingAddress.country` must be `CA` or `US`. Anything else is a
+`VALIDATION_ERROR`.
+
 Response: the created order, including server-computed `subtotal`,
-`discountAmount`, `totalPrice`, and its `id`.
+`discountAmount`, `shippingAmount`, `totalPrice` (which includes shipping),
+and its `id`.
 
 ### `POST /orders/:id/checkout-session`
 Creates a Stripe Checkout Session for an existing `pending_payment` order,

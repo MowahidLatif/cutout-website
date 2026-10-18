@@ -37,8 +37,11 @@ backend/
     └── db/
         ├── pool.js             — pg Pool, reads connection info from env
         └── migrations/
-            └── 001_init.sql    — creates all tables + seeds starter
-                                  pricing_config / quantity_discount_tiers rows
+            ├── 001_init.sql    — creates all tables + seeds starter
+            │                     pricing_config / quantity_discount_tiers rows
+            └── 002_shipping.sql — shipping_rates table + orders.shipping_amount
+                                  (migrate.js re-runs every file, so keep
+                                  migrations idempotent)
 ```
 
 ## Request lifecycle (example: placing an order)
@@ -85,9 +88,13 @@ Order of operations:
 2. Look up `discount_pct` for the quantity from `quantity_discount_tiers`
    (match into the `[min_qty, max_qty]` range)
 3. `unit_price = base_rate * (1 - discount_pct / 100)`
-4. `total_price = unit_price * quantity`
-5. Round to 2 decimals; store subtotal/discount/total separately on the
-   order for auditability
+4. `line_total = unit_price * quantity`
+5. `calculateShipping(...)`: look up `(country, size_tier)` in
+   `shipping_rates`; `shipping = first_unit_rate + additional_unit_rate * (quantity - 1)`.
+   The quantity discount never applies to shipping.
+6. `total_price = sum(line_total) + sum(shipping)`
+7. Round to 2 decimals; store subtotal/discount/shipping/total separately
+   on the order for auditability
 
 This function is called again server-side — recomputed from the submitted
 order, never trusted from the client — immediately before creating the

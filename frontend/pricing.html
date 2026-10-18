@@ -22,7 +22,8 @@
     <h1>Pricing</h1>
     <p class="lead">
       Price is based on size and material, and gets cheaper per cutout the
-      more you order. The exact numbers below are pulled live from our
+      more you order. Shipping is added at checkout based on your country
+      and cutout size. The exact numbers below are pulled live from our
       current rates.
     </p>
 
@@ -56,6 +57,22 @@
       </tbody>
     </table>
 
+    <h2>Shipping</h2>
+    <p class="lead">Shipped directly to you. Extra cutouts in the same order ship at a lower rate.</p>
+    <table id="shipping-table">
+      <thead>
+        <tr>
+          <th>Country</th>
+          <th>Size tier</th>
+          <th>First cutout</th>
+          <th>Each additional</th>
+        </tr>
+      </thead>
+      <tbody id="shipping-body">
+        <tr><td colspan="4">Loading shipping rates&hellip;</td></tr>
+      </tbody>
+    </table>
+
     <a class="btn btn-primary" href="create.html">Create Your Cutout Now</a>
   </main>
 
@@ -79,6 +96,10 @@
       foam_board: "Foam board",
       acrylic: "Acrylic",
     };
+    const COUNTRY_LABELS = {
+      CA: "Canada",
+      US: "United States",
+    };
 
     function showError(message) {
       const el = document.getElementById("status");
@@ -95,6 +116,7 @@
         const data = await Api.get("/pricing-config");
         renderRates(data.rates || []);
         renderDiscounts(data.discountTiers || []);
+        renderShipping(data.shippingRates || []);
       } catch (err) {
         showError(
           "Couldn't load current pricing (" + err.message + "). Please try again shortly."
@@ -103,6 +125,8 @@
           "<tr><td colspan=\"3\">Unavailable</td></tr>";
         document.getElementById("discount-body").innerHTML =
           "<tr><td colspan=\"2\">Unavailable</td></tr>";
+        document.getElementById("shipping-body").innerHTML =
+          "<tr><td colspan=\"4\">Unavailable</td></tr>";
       }
     }
 
@@ -139,6 +163,25 @@
           <td>${Number(t.discountPct) > 0 ? t.discountPct + "% off" : "—"}</td>
         </tr>`;
         })
+        .join("");
+    }
+
+    function renderShipping(shippingRates) {
+      const body = document.getElementById("shipping-body");
+      if (!shippingRates.length) {
+        body.innerHTML = "<tr><td colspan=\"4\">No shipping rates configured yet.</td></tr>";
+        return;
+      }
+      body.innerHTML = shippingRates
+        .map(
+          (s) => `
+        <tr>
+          <td>${COUNTRY_LABELS[s.country] || s.country}</td>
+          <td>${SIZE_LABELS[s.sizeTier] || s.sizeTier}</td>
+          <td>${formatCurrency(s.firstUnitRate)}</td>
+          <td>${formatCurrency(s.additionalUnitRate)}</td>
+        </tr>`
+        )
         .join("");
     }
 

@@ -45,9 +45,37 @@
     return { baseRate, unitPrice, discountPct, subtotal, discountAmount, total };
   }
 
+  /**
+   * Shipping for one line: first unit at the full rate, each additional
+   * unit at the cheaper rate. Mirrors calculateShipping in the backend.
+   *
+   * @param {Object} params
+   * @param {string} params.country
+   * @param {string} params.sizeTier
+   * @param {number} params.quantity
+   * @param {Array<{country:string, sizeTier:string, firstUnitRate:number, additionalUnitRate:number}>} params.shippingRates
+   * @returns {number | null}
+   */
+  function calculateShipping({ country, sizeTier, quantity, shippingRates }) {
+    if (!country || !sizeTier || !quantity || quantity < 1) {
+      return null;
+    }
+
+    const rateRow = (shippingRates || []).find(
+      (s) => s.country === country && s.sizeTier === sizeTier
+    );
+    if (!rateRow) {
+      return null;
+    }
+
+    return round2(
+      Number(rateRow.firstUnitRate) + Number(rateRow.additionalUnitRate) * (quantity - 1)
+    );
+  }
+
   function round2(n) {
     return Math.round((n + Number.EPSILON) * 100) / 100;
   }
 
-  window.Pricing = { calculatePrice };
+  window.Pricing = { calculatePrice, calculateShipping };
 })();

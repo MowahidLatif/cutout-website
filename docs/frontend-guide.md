@@ -54,7 +54,7 @@ A single form with:
 6. A live price display (plain text/`<div>`, updated on every change via
    `js/create.js`, using the shared formula in `js/pricing.js`)
 7. Contact + shipping fields: email, phone, address lines, city, region,
-   postal code, country
+   postal code, country (`<select>`: `CA` / `US`, since it drives shipping)
 8. A submit button that:
    - `POST`s to `/api/orders` to create the order
    - `POST`s to `/api/orders/:id/checkout-session`
@@ -66,21 +66,28 @@ and displays the status in plain text.
 
 ## Live pricing logic
 
-`js/pricing.js` exports one pure function:
+`js/pricing.js` exports two pure functions:
 
 ```js
 function calculatePrice({ sizeTier, material, quantity, rates, discountTiers }) {
   // returns { unitPrice, discountPct, subtotal, total }
 }
+
+function calculateShipping({ country, sizeTier, quantity, shippingRates }) {
+  // returns first_unit_rate + additional_unit_rate * (quantity - 1), or null
+}
 ```
 
-- `rates` and `discountTiers` come from `GET /api/pricing-config`, fetched
+The displayed total is `calculatePrice(...).total + calculateShipping(...)`.
+
+- `rates`, `discountTiers` and `shippingRates` come from `GET /api/pricing-config`, fetched
   once when `create.html` loads — never hardcode rates in JS.
 - This function **must produce the same result as the backend's pricing
   service** (`backend/src/services/pricing.js`). It exists purely for
   instant UI feedback. The price it shows is never what's actually charged
   — the backend recomputes from scratch before creating the Stripe session.
-- Recompute on every `input`/`change` event on size, material, or quantity.
+- Recompute on every `input`/`change` event on size, material, quantity,
+  or country.
   No API call needed for this — it's all client-side math from the fetched
   config.
 

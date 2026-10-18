@@ -4,7 +4,7 @@
  * Stripe Checkout.
  */
 (function () {
-  let pricingConfig = null; // { rates, discountTiers }
+  let pricingConfig = null; // { rates, discountTiers, shippingRates }
   let uploadedImageUrl = null;
   let selectedFile = null;
 
@@ -77,7 +77,7 @@
   }
 
   // ---------- Live pricing ----------
-  [fields.sizeTier, fields.material, fields.quantity].forEach((el) => {
+  [fields.sizeTier, fields.material, fields.quantity, fields.country].forEach((el) => {
     el.addEventListener("change", recalculatePrice);
     el.addEventListener("input", recalculatePrice);
   });
@@ -104,9 +104,21 @@
       return;
     }
 
-    totalEl.textContent = formatCurrency(result.total);
-    breakdownEl.textContent =
-      `${formatCurrency(result.unitPrice)} each × ${fields.quantity.value}`;
+    const shipping = Pricing.calculateShipping({
+      country: fields.country.value,
+      sizeTier: fields.sizeTier.value,
+      quantity: Number(fields.quantity.value),
+      shippingRates: pricingConfig.shippingRates,
+    });
+
+    const itemsLine = `${formatCurrency(result.unitPrice)} each × ${fields.quantity.value}`;
+    if (shipping === null) {
+      totalEl.textContent = formatCurrency(result.total);
+      breakdownEl.textContent = `${itemsLine} — shipping calculated once you choose a country`;
+    } else {
+      totalEl.textContent = formatCurrency(result.total + shipping);
+      breakdownEl.textContent = `${itemsLine} + ${formatCurrency(shipping)} shipping`;
+    }
 
     if (result.discountPct > 0) {
       discountTag.textContent = `${result.discountPct}% bulk discount`;

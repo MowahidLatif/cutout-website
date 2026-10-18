@@ -129,8 +129,13 @@
         <div class="form-row cols-2" style="margin-top:1.25rem">
           <div class="field">
             <label for="country">Country</label>
-            <input id="country" type="text" required placeholder="e.g. Canada" />
-            <span class="error">Enter your country.</span>
+            <select id="country" required>
+              <option value="">Select country&hellip;</option>
+              <option value="CA">Canada</option>
+              <option value="US">United States</option>
+            </select>
+            <span class="hint">We currently ship to Canada and the United States.</span>
+            <span class="error">Choose your country.</span>
           </div>
         </div>
       </fieldset>

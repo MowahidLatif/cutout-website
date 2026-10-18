@@ -9,12 +9,16 @@ function round2(n) {
 }
 
 async function getPricingConfig() {
-  const [ratesResult, tiersResult] = await Promise.all([
+  const [ratesResult, tiersResult, shippingResult] = await Promise.all([
     pool.query(
       "SELECT size_tier, material, base_rate FROM pricing_config ORDER BY size_tier, material"
     ),
     pool.query(
       "SELECT min_qty, max_qty, discount_pct FROM quantity_discount_tiers ORDER BY min_qty"
+    ),
+    pool.query(
+      `SELECT country, size_tier, first_unit_rate, additional_unit_rate
+       FROM shipping_rates ORDER BY country, size_tier`
     ),
   ]);
 
@@ -28,6 +32,12 @@ async function getPricingConfig() {
       minQty: t.min_qty,
       maxQty: t.max_qty,
       discountPct: Number(t.discount_pct),
+    })),
+    shippingRates: shippingResult.rows.map((s) => ({
+      country: s.country,
+      sizeTier: s.size_tier,
+      firstUnitRate: Number(s.first_unit_rate),
+      additionalUnitRate: Number(s.additional_unit_rate),
     })),
   };
 }
@@ -74,4 +84,38 @@ async function calculatePrice({ sizeTier, material, quantity }) {
   return { baseRate, unitPrice, discountPct, subtotal, discountAmount, total };
 }
 
-module.exports = { getPricingConfig, calculatePrice };
+/**
+ * Shipping for one line: first unit at the full rate, each additional unit
+ * at the cheaper rate. The quantity discount never applies to shipping.
+ *
+ * @param {Object} params
+ * @param {string} params.country
+ * @param {string} params.sizeTier
+ * @param {number} params.quantity
+ * @returns {Promise<number>}
+ */
+async function calculateShipping({ country, sizeTier, quantity }) {
+  if (!quantity || quantity < 1) {
+    throw Object.assign(new Error("Quantity must be at least 1."), {
+      code: "VALIDATION_ERROR",
+    });
+  }
+
+  const result = await pool.query(
+    `SELECT first_unit_rate, additional_unit_rate FROM shipping_rates
+     WHERE country = $1 AND size_tier = $2`,
+    [country, sizeTier]
+  );
+  if (result.rowCount === 0) {
+    throw Object.assign(
+      new Error(`Shipping isn't available to "${country}" for size "${sizeTier}".`),
+      { code: "VALIDATION_ERROR" }
+    );
+  }
+  const firstUnitRate = Number(result.rows[0].first_unit_rate);
+  const additionalUnitRate = Number(result.rows[0].additional_unit_rate);
+
+  return round2(firstUnitRate + additionalUnitRate * (quantity - 1));
+}
+
+module.exports = { getPricingConfig, calculatePrice, calculateShipping };

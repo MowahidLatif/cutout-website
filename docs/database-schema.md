@@ -14,8 +14,9 @@ runnable version of this.
 | shipping_address | jsonb | `{ line1, line2, city, region, postal_code, country }` |
 | status | text (enum) | `pending_payment`, `paid`, `in_production`, `shipped`, `delivered`, `cancelled` |
 | subtotal | numeric(10,2) | pre-discount total across all items |
-| discount_amount | numeric(10,2) | for audit/display |
-| total_price | numeric(10,2) | what was actually charged |
+| discount_amount | numeric(10,2) | for audit/display; product-only, never applied to shipping |
+| shipping_amount | numeric(10,2) | sum of each item's shipping (see `shipping_rates`) |
+| total_price | numeric(10,2) | what was actually charged: `subtotal - discount_amount + shipping_amount` |
 | stripe_session_id | text | nullable until checkout session created |
 | stripe_payment_intent_id | text | nullable until paid |
 | created_at | timestamptz | |
@@ -67,6 +68,22 @@ Starting v1 values (adjust once real costs/margins are known):
 | 10 | 24 | 15 |
 | 25 | null | 20 |
 
+## `shipping_rates`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid, pk | |
+| country | text | `CA`, `US` (ISO 3166 alpha-2; only these two in v1) |
+| size_tier | text | see above |
+| first_unit_rate | numeric(10,2) | shipping for the first unit of an item |
+| additional_unit_rate | numeric(10,2) | shipping for each further unit of the same item |
+| updated_at | timestamptz | |
+
+Unique on `(country, size_tier)`. Shipping for an item is
+`first_unit_rate + additional_unit_rate * (quantity - 1)`. Added in
+`002_shipping.sql`; only CA / life_size first unit (122.00) is from a real
+supplier quote, the rest are scaled placeholders.
+
 ## `payments`
 
 | Column | Type | Notes |
@@ -85,6 +102,6 @@ Starting v1 values (adjust once real costs/margins are known):
 - Status/tier/material columns use `text` with a `CHECK` constraint rather
   than a Postgres `enum` type, to keep the migration file simple (no
   `ALTER TYPE` ceremony later if a value needs adding).
-- `pricing_config` and `quantity_discount_tiers` are seeded with
-  placeholder rates in the migration — edit them directly once real
+- `pricing_config`, `quantity_discount_tiers` and `shipping_rates` are
+  seeded with placeholder rates in the migrations — edit them directly once real
   supplier costs are known.

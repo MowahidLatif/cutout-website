@@ -1,8 +1,9 @@
 const pool = require("../db/pool");
-const { calculatePrice } = require("./pricing");
+const { calculatePrice, calculateShipping } = require("./pricing");
 
 const VALID_SIZE_TIERS = ["small", "medium", "life_size", "xl"];
 const VALID_MATERIALS = ["cardboard", "coroplast", "foam_board", "acrylic"];
+const VALID_COUNTRIES = ["CA", "US"];
 
 function validationError(message) {
   return Object.assign(new Error(message), { code: "VALIDATION_ERROR" });
@@ -21,6 +22,11 @@ function validateOrderInput({ customerEmail, customerPhone, shippingAddress, ite
   }
   if (!shippingAddress || !shippingAddress.line1 || !shippingAddress.city) {
     throw validationError("shippingAddress with at least line1 and city is required.");
+  }
+  if (!VALID_COUNTRIES.includes(shippingAddress.country)) {
+    throw validationError(
+      `We currently only ship to ${VALID_COUNTRIES.join(" and ")} (got: ${shippingAddress.country}).`
+    );
   }
   if (!Array.isArray(items) || items.length === 0) {
     throw validationError("At least one order item is required.");
@@ -51,7 +57,8 @@ async function createOrder(input) {
   // Recompute every item's price server-side — never trust a price from the client.
   const pricedItems = [];
   let subtotal = 0;
-  let total = 0;
+  let itemsTotal = 0;
+  let shippingAmount = 0;
 
   for (const item of items) {
     const price = await calculatePrice({
@@ -61,12 +68,20 @@ async function createOrder(input) {
     });
     pricedItems.push({ ...item, price });
     subtotal += price.subtotal;
-    total += price.total;
+    itemsTotal += price.total;
+    shippingAmount += await calculateShipping({
+      country: shippingAddress.country,
+      sizeTier: item.sizeTier,
+      quantity: item.quantity,
+    });
   }
 
   subtotal = round2(subtotal);
-  total = round2(total);
-  const discountAmount = round2(subtotal - total);
+  itemsTotal = round2(itemsTotal);
+  shippingAmount = round2(shippingAmount);
+  // The discount is product-only; shipping is added on top.
+  const discountAmount = round2(subtotal - itemsTotal);
+  const total = round2(itemsTotal + shippingAmount);
 
   const client = await pool.connect();
   try {
@@ -74,10 +89,10 @@ async function createOrder(input) {
 
     const orderResult = await client.query(
       `INSERT INTO orders
-         (customer_email, customer_phone, shipping_address, status, subtotal, discount_amount, total_price)
-       VALUES ($1, $2, $3, 'pending_payment', $4, $5, $6)
+         (customer_email, customer_phone, shipping_address, status, subtotal, discount_amount, shipping_amount, total_price)
+       VALUES ($1, $2, $3, 'pending_payment', $4, $5, $6, $7)
        RETURNING *`,
-      [customerEmail, customerPhone, shippingAddress, subtotal, discountAmount, total]
+      [customerEmail, customerPhone, shippingAddress, subtotal, discountAmount, shippingAmount, total]
     );
     const order = orderResult.rows[0];
 
@@ -135,6 +150,7 @@ async function getOrderById(orderId, { email } = {}) {
     status: order.status,
     subtotal: Number(order.subtotal),
     discountAmount: Number(order.discount_amount),
+    shippingAmount: Number(order.shipping_amount),
     totalPrice: Number(order.total_price),
     stripeSessionId: order.stripe_session_id,
     createdAt: order.created_at,
