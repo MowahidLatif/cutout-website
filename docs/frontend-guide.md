@@ -21,6 +21,7 @@ frontend/
 │                          Stripe success page (?order=<id>), which clears the cart
 ├── admin.html           — owner-only: orders, supplier image links, status
 │                          changes + history (not in the site nav; noindex)
+├── policies.html        — returns & refunds: final sale, free reprint if damaged
 ├── create.html          — redirect to index.html#studio (keeps old links working)
 ├── css/
 │   └── style.css        — one shared stylesheet: tokens, components, breakpoints
@@ -50,7 +51,7 @@ the end `site-config.js` → `pricing.js` → `api.js` → `cart.js` →
 The design was built with values that aren't real yet, so nothing has to
 wait on the supplier. They live in exactly two places:
 
-- **`js/site-config.js` (`window.SITE`)**: production and transit days,
+- **`js/site-config.js` (`window.SITE`)**: `supportEmail` (no domain yet), production and transit days,
   the "from $29" price, the rating text, the material catalogue (only
   `coroplast`, shown as "Premium Corrugated", is orderable; foam board and
   acrylic show "Coming soon"), reference heights, and height/width/text
@@ -71,6 +72,13 @@ wait on the supplier. They live in exactly two places:
 
 Prices are **never** placeholders. They always come from
 `GET /api/pricing-config`.
+
+## Currency
+
+All prices are **CAD** (`SITE.currency`, and `currency` from
+`/api/pricing-config`). Amounts keep the plain `$` look from the design;
+where money is totalled the page says CAD (studio price card, checkout
+total, pricing page, admin).
 
 ## Design system (`css/style.css`)
 
@@ -179,12 +187,22 @@ transitions.
   quantity stepper, the line price, and Remove.
 - **Contact + shipping address:** country is `CA`/`US` and drives shipping.
 - **Summary:** standees (pre-discount), bulk discount, shipping (once a
-  country is chosen) and the total.
+  country is chosen) and the total, labelled CAD.
+- **Final-sale checkbox (required):** "I understand each standee is
+  custom-made… final sale". Pay is blocked until it's ticked, and the order
+  is sent with `acceptedFinalSale: true`.
 - **"Pay with Stripe":** `POST /api/orders` with all cart items, then
   `POST /api/orders/:id/checkout-session`, then a redirect. If a cart
   photo is missing on the server, it tells the customer to re-add that
   item.
 - An empty cart shows a link back to the studio.
+
+### `policies.html`: Returns & refunds
+All sales are final (each standee is custom-made); damaged or misprinted
+standees are reprinted free if reported with a photo within
+`SITE.damageClaimDays` (7) of delivery. The support email, day count and
+policy version are filled in from `site-config.js`. Every page footer links
+here, as does the studio price card ("Final sale, no returns").
 
 ### `pricing.html`: Pricing
 Fetches `GET /api/pricing-config` and renders the base rate, discount and

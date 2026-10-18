@@ -49,6 +49,9 @@ who produces and ships the product directly to the customer.
 - **No background removal / image processing pipeline yet.** Uploads are
   only validated (type by contents, size, min resolution) and
   auto-rotated from EXIF. No other edits.
+- **All prices and charges are CAD** (`CURRENCY` in
+  `backend/src/services/pricing.js`). **All sales are final** (custom-made;
+  free reprint if damaged), and checkout requires accepting that.
 - **Pricing is config-driven, not hardcoded**: size tier × material
   multiplier, with a quantity-discount curve. Both live in the database so
   they can change without a redeploy.

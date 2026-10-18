@@ -68,8 +68,8 @@ function formatOrderDetails(order, { downloadLinks = false } = {}) {
     `Order ID: ${order.id}\n` +
     `Customer: ${order.customerEmail} / ${order.customerPhone}\n` +
     `Shipping to: ${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}, ${addr.city}, ${addr.region} ${addr.postalCode}, ${addr.country}\n` +
-    `Shipping: $${order.shippingAmount.toFixed(2)}\n` +
-    `Total: $${order.totalPrice.toFixed(2)}\n\n` +
+    `Shipping: $${order.shippingAmount.toFixed(2)} ${order.currency}\n` +
+    `Total: $${order.totalPrice.toFixed(2)} ${order.currency}\n\n` +
     `Items:\n${itemLines}`
   );
 }
@@ -95,6 +95,9 @@ async function sendCustomerConfirmation(order) {
     subject: "We've got your cutout order!",
     body:
       `Thanks for your order! Here's a summary:\n\n${formatOrderDetails(order)}\n\n` +
+      `Your standee is made just for you, so all sales are final: we can't accept returns or ` +
+      `give refunds. If it arrives damaged or misprinted, reply to this email with a photo ` +
+      `within 7 days of delivery and we'll reprint it free.\n\n` +
       `You can check your order status any time at order-status.html using your order ID and email.`,
   });
 }

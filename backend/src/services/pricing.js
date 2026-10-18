@@ -8,6 +8,9 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/** Every price in the database, and every Stripe charge, is in this currency. */
+const CURRENCY = "CAD";
+
 /** Orderable standee heights, in inches (1–8 ft). */
 const HEIGHT_RANGE_IN = { min: 12, max: 96 };
 
@@ -41,6 +44,7 @@ async function getPricingConfig() {
   ]);
 
   return {
+    currency: CURRENCY,
     rates: ratesResult.rows.map((r) => ({
       sizeTier: r.size_tier,
       material: r.material,
@@ -137,6 +141,7 @@ async function calculateShipping({ country, sizeTier, quantity }) {
 }
 
 module.exports = {
+  CURRENCY,
   HEIGHT_RANGE_IN,
   sizeTierForHeight,
   getPricingConfig,

@@ -13,6 +13,18 @@
   window.SITE = {
     brand: "CutoutCraft",
 
+    // Every price is in this currency (it also comes back from
+    // GET /api/pricing-config as `currency`). Stripe charges CAD.
+    currency: "CAD",
+
+    // Final-sale (no returns) policy shown in policies.html and accepted at
+    // checkout. Must match POLICY_VERSION in backend/src/services/orders.js.
+    policyVersion: "2026-10-18",
+    damageClaimDays: 7,
+
+    // PLACEHOLDER — set once the domain is chosen.
+    supportEmail: "support@example.com",
+
     // PLACEHOLDER — production + shipping times (business days).
     productionDays: 2,
     transitDaysMin: 3,

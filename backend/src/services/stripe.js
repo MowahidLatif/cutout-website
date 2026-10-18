@@ -24,9 +24,12 @@ async function createCheckoutSession(order) {
     line_items: [
       {
         price_data: {
-          currency: "usd",
+          // Always charged in CAD. Customers elsewhere can see their local
+          // currency if Adaptive Pricing is on in the Stripe Dashboard; we
+          // still settle in CAD.
+          currency: order.currency.toLowerCase(),
           product_data: {
-            name: "Life-size 2D cutout order",
+            name: "Custom life-size standee order",
             description: order.items
               .map((i) => `${i.quantity}x ${i.sizeTier} / ${i.material}`)
               .join(", "),
@@ -37,6 +40,15 @@ async function createCheckoutSession(order) {
         quantity: 1,
       },
     ],
+    // Shown next to Stripe's pay button, so the final-sale policy is in
+    // front of the customer at the moment they pay.
+    custom_text: {
+      submit: {
+        message:
+          "All sales are final — each standee is custom-made for you. " +
+          "Damaged or misprinted? We'll reprint it free (see our returns policy).",
+      },
+    },
     success_url: (process.env.STRIPE_SUCCESS_URL || "").replace("{ORDER_ID}", order.id),
     cancel_url: process.env.STRIPE_CANCEL_URL,
     metadata: { orderId: order.id },

@@ -1,5 +1,5 @@
 const pool = require("../db/pool");
-const { calculatePrice, calculateShipping, sizeTierForHeight, HEIGHT_RANGE_IN } = require("./pricing");
+const { calculatePrice, calculateShipping, sizeTierForHeight, HEIGHT_RANGE_IN, CURRENCY } = require("./pricing");
 const storage = require("./storage");
 
 const VALID_MATERIALS = ["cardboard", "coroplast", "foam_board", "acrylic"];
@@ -8,6 +8,10 @@ const WIDTH_RANGE_IN = { min: 6, max: 96 };
 const TEXT_STYLES = ["bubble", "placard", "caption"];
 const MAX_TEXT_ELEMENTS = 3;
 const MAX_TEXT_LENGTH = 80;
+// Version of the final-sale (no returns) policy the customer agrees to at
+// checkout — bump it whenever frontend/policies.html changes materially.
+// Same value as SITE.policyVersion in frontend/js/site-config.js.
+const POLICY_VERSION = "2026-10-18";
 
 function validationError(message) {
   return Object.assign(new Error(message), { code: "VALIDATION_ERROR" });
@@ -17,7 +21,12 @@ function notFoundError(message) {
   return Object.assign(new Error(message), { code: "NOT_FOUND" });
 }
 
-function validateOrderInput({ customerEmail, customerPhone, shippingAddress, items }) {
+function validateOrderInput({ customerEmail, customerPhone, shippingAddress, items, acceptedFinalSale }) {
+  if (acceptedFinalSale !== true) {
+    throw validationError(
+      "Please confirm you understand each standee is custom-made and final sale (no returns or refunds)."
+    );
+  }
   if (!customerEmail || !/^\S+@\S+\.\S+$/.test(customerEmail)) {
     throw validationError("A valid customerEmail is required.");
   }
@@ -137,10 +146,21 @@ async function createOrder(input) {
 
     const orderResult = await client.query(
       `INSERT INTO orders
-         (customer_email, customer_phone, shipping_address, status, subtotal, discount_amount, shipping_amount, total_price)
-       VALUES ($1, $2, $3, 'pending_payment', $4, $5, $6, $7)
+         (customer_email, customer_phone, shipping_address, status, subtotal, discount_amount,
+          shipping_amount, total_price, currency, final_sale_accepted_at, final_sale_policy_version)
+       VALUES ($1, $2, $3, 'pending_payment', $4, $5, $6, $7, $8, now(), $9)
        RETURNING *`,
-      [customerEmail, customerPhone, shippingAddress, subtotal, discountAmount, shippingAmount, total]
+      [
+        customerEmail,
+        customerPhone,
+        shippingAddress,
+        subtotal,
+        discountAmount,
+        shippingAmount,
+        total,
+        CURRENCY,
+        POLICY_VERSION,
+      ]
     );
     const order = orderResult.rows[0];
 
@@ -213,6 +233,9 @@ async function getOrderById(orderId, { email } = {}) {
     discountAmount: Number(order.discount_amount),
     shippingAmount: Number(order.shipping_amount),
     totalPrice: Number(order.total_price),
+    currency: order.currency,
+    finalSaleAcceptedAt: order.final_sale_accepted_at,
+    finalSalePolicyVersion: order.final_sale_policy_version,
     stripeSessionId: order.stripe_session_id,
     createdAt: order.created_at,
     updatedAt: order.updated_at,
@@ -243,9 +266,10 @@ async function setStripeSession(orderId, sessionId) {
  * @param {string} paymentIntentId
  * @param {Object} [payment]
  * @param {number} [payment.amount] what Stripe actually charged; defaults to the order's total_price
+ * @param {string} [payment.currency] Stripe's currency for that amount; defaults to the order's
  * @param {Object} [payment.rawPayload] the webhook event, kept for audit/debugging
  */
-async function markOrderPaid(orderId, paymentIntentId, { amount, rawPayload } = {}) {
+async function markOrderPaid(orderId, paymentIntentId, { amount, currency, rawPayload } = {}) {
   assertOrderId(orderId);
   // One statement, so the status change, its audit event and the payment
   // row are all-or-nothing, and written only when the status actually
@@ -255,15 +279,17 @@ async function markOrderPaid(orderId, paymentIntentId, { amount, rawPayload } = 
        UPDATE orders
        SET status = 'paid', stripe_payment_intent_id = $1, updated_at = now()
        WHERE id = $2 AND status = 'pending_payment'
-       RETURNING id, total_price
+       RETURNING id, total_price, currency
      ),
      event AS (
        INSERT INTO order_status_events (order_id, from_status, to_status, changed_by)
        SELECT id, 'pending_payment', 'paid', 'stripe-webhook' FROM updated
      )
-     INSERT INTO payments (order_id, provider, provider_txn_id, amount, status, raw_payload)
-     SELECT id, 'stripe', $1, COALESCE($3::numeric, total_price), 'succeeded', $4 FROM updated`,
-    [paymentIntentId, orderId, amount ?? null, rawPayload ?? null]
+     INSERT INTO payments (order_id, provider, provider_txn_id, amount, currency, status, raw_payload)
+     SELECT id, 'stripe', $1, COALESCE($3::numeric, total_price), COALESCE($5::text, currency),
+            'succeeded', $4
+     FROM updated`,
+    [paymentIntentId, orderId, amount ?? null, rawPayload ?? null, currency ? currency.toUpperCase() : null]
   );
   return getOrderById(orderId);
 }

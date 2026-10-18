@@ -59,7 +59,8 @@ backend/
             ├── 002_shipping.sql — shipping_rates (seeded) + orders.shipping_amount
             ├── 003_image_key.sql — order_items.image_url → image_key
             ├── 004_order_status_events.sql — status-change audit log
-            └── 005_item_customization.sql — order_items.width_in + text_elements
+            ├── 005_item_customization.sql — order_items.width_in + text_elements
+            └── 006_cad_and_final_sale.sql — currency, final-sale acceptance, USD→CAD seeds
 ```
 
 `migrate.js` re-runs **every** file each time, so migrations must be
@@ -164,10 +165,30 @@ are never read. The checkout session then charges the **stored**
 `total_price`, so the amount the customer pays is exactly what was saved
 on the order.
 
+## Currency
+
+Everything is **CAD**: `CURRENCY` in `services/pricing.js` is the single
+source. It's returned by `/api/pricing-config`, stored on each order
+(`orders.currency`), and used for the Stripe charge. To show local
+currencies to customers outside Canada, turn on **Adaptive Pricing** in the
+Stripe Dashboard (Settings → Payments). That needs no code, and Stripe still
+settles in CAD.
+
+## Final-sale policy
+
+Every standee is custom-made, so all sales are final (free reprint if it
+arrives damaged or misprinted; see `frontend/policies.html`).
+`createOrder` rejects orders without `acceptedFinalSale: true` and records
+`final_sale_accepted_at` + `POLICY_VERSION` (`services/orders.js`; bump it,
+and `SITE.policyVersion`, when the policy text changes materially). The
+Stripe page repeats the notice via `custom_text.submit`, and the customer
+confirmation email includes it.
+
 ## Stripe integration
 
 - `services/stripe.js` creates the Checkout Session from the stored
-  `totalPrice`: USD, one line item, `metadata.orderId`.
+  `totalPrice`: the order's currency (CAD), one line item,
+  `metadata.orderId`, plus the final-sale `custom_text`.
   `STRIPE_SUCCESS_URL` has `{ORDER_ID}` substituted.
 - The checkout-session route refuses orders that aren't `pending_payment`,
   so a paid order can't be charged twice.

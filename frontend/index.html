@@ -246,7 +246,9 @@
               <div class="price-card__top">
                 <div>
                   <div class="price-card__label" id="price-label">Your standee</div>
-                  <div class="price-card__total" id="price-total" aria-live="polite">—</div>
+                  <div class="price-card__total" aria-live="polite">
+                    <span id="price-total">—</span><span class="currency-tag">CAD</span>
+                  </div>
                 </div>
                 <dl class="price-lines" id="price-lines"></dl>
               </div>
@@ -272,6 +274,10 @@
                 <svg class="icon"><use href="#i-bag"/></svg>Add to cart
               </button>
               <p class="price-card__note" id="price-note" aria-live="polite">Upload a photo to get started.</p>
+              <p class="price-card__fineprint">
+                Prices in Canadian dollars · Made to order ·
+                <a href="policies.html">Final sale, no returns</a>
+              </p>
             </section>
           </div>
         </div>
@@ -380,6 +386,7 @@
         <a href="#studio">Studio</a>
         <a href="#how-it-works">How it works</a>
         <a href="#gallery">Gallery</a>
+        <a href="policies.html">Returns policy</a>
       </nav>
       <span>&copy; <span data-year></span> CutoutCraft. Made with cardboard &amp; love.</span>
     </div>

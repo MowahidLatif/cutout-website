@@ -17,6 +17,8 @@
   const summaryEl = $("summary-rows");
   const statusEl = $("form-status");
   const submitBtn = $("submit-btn");
+  const acceptFinalSale = $("accept-final-sale");
+  const consentEl = $("final-sale-consent");
 
   const fields = {
     email: $("email"),
@@ -141,7 +143,7 @@
     const rows = [[`Standees (${count})`, formatCurrency(subtotal)]];
     if (discount > 0) rows.push(["Bulk discount", "−" + formatCurrency(discount), "is-discount"]);
     rows.push(["Shipping", shippingKnown ? formatCurrency(shipping) : "Choose a country"]);
-    rows.push(["Total", formatCurrency(round2(itemsTotal + (shippingKnown ? shipping : 0))), "is-total"]);
+    rows.push([`Total (${pricingConfig.currency || SITE.currency})`, formatCurrency(round2(itemsTotal + (shippingKnown ? shipping : 0))), "is-total"]);
 
     summaryEl.innerHTML = rows
       .map(([dt, dd, cls]) => `<div class="${cls || ""}"><dt>${dt}</dt><dd>${dd}</dd></div>`)
@@ -173,6 +175,9 @@
   });
 
   fields.country.addEventListener("change", () => render());
+  acceptFinalSale.addEventListener("change", () => {
+    if (acceptFinalSale.checked) consentEl.classList.remove("has-error");
+  });
   window.addEventListener("storage", render);
 
   // ---------- Validation ----------
@@ -196,12 +201,24 @@
     return valid;
   }
 
+  /** The customer must acknowledge the final-sale policy before paying. */
+  function validateConsent() {
+    consentEl.classList.toggle("has-error", !acceptFinalSale.checked);
+    return acceptFinalSale.checked;
+  }
+
   // ---------- Submit ----------
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     hideStatus();
-    if (!validate()) {
+    const fieldsOk = validate();
+    const consentOk = validateConsent();
+    if (!fieldsOk) {
       showStatus("Please fix the highlighted fields.");
+      return;
+    }
+    if (!consentOk) {
+      showStatus("Please confirm you understand your standee is custom-made and final sale.");
       return;
     }
     const items = Cart.get();
@@ -221,6 +238,7 @@
           postalCode: fields.postalCode.value.trim(),
           country: fields.country.value,
         },
+        acceptedFinalSale: acceptFinalSale.checked,
         items: items.map((item) => ({
           imageKey: item.imageKey,
           heightIn: item.heightIn,

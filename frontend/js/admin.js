@@ -161,7 +161,12 @@
         <strong>Totals:</strong> subtotal ${formatCurrency(order.subtotal)},
         discount ${formatCurrency(order.discountAmount)},
         shipping ${formatCurrency(order.shippingAmount)},
-        <strong>total ${formatCurrency(order.totalPrice)}</strong>
+        <strong>total ${formatCurrency(order.totalPrice)} ${escapeHtml(order.currency || "")}</strong><br />
+        <strong>Final sale:</strong> ${
+          order.finalSaleAcceptedAt
+            ? `accepted ${escapeHtml(new Date(order.finalSaleAcceptedAt).toLocaleString())} (policy ${escapeHtml(order.finalSalePolicyVersion)})`
+            : "not recorded (order placed before the policy checkbox existed)"
+        }
       </p>
       <h3>Items</h3>
       ${order.items

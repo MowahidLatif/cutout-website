@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Returns &amp; refunds — CutoutCraft</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=Permanent+Marker&display=swap" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23d9572b%27/%3E%3Cg fill=%27none%27 stroke=%27white%27 stroke-width=%272.2%27 stroke-linecap=%27round%27%3E%3Ccircle cx=%2711%27 cy=%2711%27 r=%273%27/%3E%3Ccircle cx=%2711%27 cy=%2721%27 r=%273%27/%3E%3Cpath d=%27M13.2 13.2 24 24M24 8 13.2 18.8%27/%3E%3C/g%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <script src="js/icons.js"></script>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="brand" href="index.html">
+        <span class="brand__mark"><svg class="icon"><use href="#i-scissors"/></svg></span>
+        CutoutCraft
+      </a>
+      <nav class="site-nav" data-nav aria-label="Main">
+        <a href="index.html#studio">Studio</a>
+        <a href="index.html#how-it-works">How it works</a>
+        <a href="index.html#gallery">Gallery</a>
+      </nav>
+      <div class="header-actions">
+        <a class="cart-pill" href="checkout.html">
+          <svg class="icon"><use href="#i-bag"/></svg>
+          <span class="cart-pill__label">Cart</span>
+          <span class="cart-pill__count" data-cart-count aria-label="items in cart">0</span>
+        </a>
+        <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="Menu">
+          <svg class="icon"><use href="#i-menu"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container page">
+    <div class="prose">
+      <span class="eyebrow">Policies</span>
+      <h1>Returns &amp; refunds</h1>
+
+      <div class="callout">
+        <p><strong>All sales are final.</strong> Every standee is printed and cut to order from
+        your photo, so we can't take it back, resell it, or offer refunds or exchanges.</p>
+        <p><strong>Arrived damaged or misprinted?</strong> Email us a photo within
+        <span data-damage-days>7</span> days of delivery and we'll reprint it free.</p>
+      </div>
+
+      <h2>Why there are no returns</h2>
+      <p>Your standee is made for you alone: your photo, your height, your text. Once it's printed it
+      can't be used for anyone else. That's why every order is final sale, and you confirm you
+      understand this before you pay.</p>
+      <p>This includes, for example:</p>
+      <ul>
+        <li>changing your mind after ordering</li>
+        <li>choosing a different height, width, material or quantity</li>
+        <li>the photo you uploaded (its quality, cropping, expression or background)</li>
+        <li>typos in text you added</li>
+      </ul>
+
+      <h2>Damaged or misprinted standees</h2>
+      <p>If your standee arrives damaged in shipping, or doesn't match what you ordered (for example,
+      the wrong photo, wrong size or a printing defect), we'll make it right with a <strong>free reprint</strong>.</p>
+      <ul>
+        <li>Email <a data-support-email href="mailto:support@example.com">support@example.com</a> within
+          <span data-damage-days>7</span> days of delivery.</li>
+        <li>Include your order ID and a photo showing the damage or the problem.</li>
+        <li>Please keep the standee and packaging until we've replied.</li>
+      </ul>
+
+      <h2>Before you order</h2>
+      <p>The studio shows your standee to scale before you buy. Please check the preview, the height,
+      the width and any text carefully, and use the clearest, highest-resolution photo you have.
+      What you see in the preview is what we print.</p>
+
+      <h2>Changes and cancellations</h2>
+      <p>If you spot a mistake right after ordering, email us straight away. Once production has
+      started, orders can't be changed or cancelled.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about an order? Email
+      <a data-support-email href="mailto:support@example.com">support@example.com</a> with your order ID.</p>
+
+      <p class="hint">Policy version <span data-policy-version>2026-10-18</span>.</p>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <a class="brand" href="index.html">
+        <span class="brand__mark"><svg class="icon"><use href="#i-scissors"/></svg></span>
+        CutoutCraft
+      </a>
+      <nav aria-label="Footer">
+        <a href="index.html#studio">Studio</a>
+        <a href="index.html#how-it-works">How it works</a>
+        <a href="index.html#gallery">Gallery</a>
+        <a href="policies.html">Returns policy</a>
+      </nav>
+      <span>&copy; <span data-year></span> CutoutCraft. Made with cardboard &amp; love.</span>
+    </div>
+  </footer>
+
+  <script src="js/site-config.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/layout.js"></script>
+  <script>
+    // Contact details and policy numbers come from js/site-config.js.
+    document.querySelectorAll("[data-support-email]").forEach((a) => {
+      a.textContent = SITE.supportEmail;
+      a.href = "mailto:" + SITE.supportEmail;
+    });
+    document.querySelectorAll("[data-damage-days]").forEach((el) => (el.textContent = SITE.damageClaimDays));
+    document.querySelectorAll("[data-policy-version]").forEach((el) => (el.textContent = SITE.policyVersion));
+  </script>
+</body>
+</html>

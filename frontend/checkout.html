@@ -121,11 +121,22 @@
       <aside class="card summary-card" aria-labelledby="summary-title">
         <h2 id="summary-title" style="font-size:1.4rem">Order summary</h2>
         <dl class="summary-rows" id="summary-rows"></dl>
-        <button type="submit" id="submit-btn" class="btn btn-primary btn-lg btn-block" disabled>
+
+        <label class="consent" id="final-sale-consent">
+          <input type="checkbox" id="accept-final-sale" required />
+          <span>
+            I understand each standee is custom-made for me and is <strong>final sale</strong>:
+            no returns or refunds. Damaged or misprinted standees are reprinted free.
+            <a href="policies.html" target="_blank" rel="noopener">Read the returns policy</a>
+          </span>
+        </label>
+
+        <button type="submit" id="submit-btn" class="btn btn-primary btn-lg btn-block" disabled style="margin-top:1.25rem">
           Pay with Stripe
         </button>
         <p class="hint" style="text-align:center;margin:0.9rem 0 0">
-          You'll pay on Stripe's secure checkout page. The final total is confirmed there.
+          Charged in Canadian dollars (CAD) on Stripe's secure checkout page.
+          Stripe may show the amount in your local currency.
         </p>
       </aside>
     </form>
@@ -141,6 +152,7 @@
         <a href="index.html#studio">Studio</a>
         <a href="index.html#how-it-works">How it works</a>
         <a href="index.html#gallery">Gallery</a>
+        <a href="policies.html">Returns policy</a>
       </nav>
       <span>&copy; <span data-year></span> CutoutCraft. Made with cardboard &amp; love.</span>
     </div>

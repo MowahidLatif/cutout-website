@@ -73,6 +73,14 @@ Stripe). See `docs/frontend-guide.md`.
 
 #### Before launch: replace the placeholders
 
+- **Stripe:** use a Stripe account that settles in **CAD**, and turn on
+  **Adaptive Pricing** (Dashboard → Settings → Payments) so customers outside
+  Canada see their local currency.
+- **Returns policy** (`frontend/policies.html`): all sales are final, with a
+  free reprint if damaged or misprinted. Set `supportEmail` in
+  `site-config.js`, and have the wording reviewed against consumer-protection
+  rules for the provinces/states you sell to.
+
 The design was built with values that aren't real yet. All of them are in
 two places:
 

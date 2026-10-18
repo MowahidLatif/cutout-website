@@ -14,6 +14,7 @@ order by `npm run migrate`:
 | `003_image_key.sql` | Renames `order_items.image_url` → `image_key` |
 | `004_order_status_events.sql` | Status-change audit log |
 | `005_item_customization.sql` | `order_items.width_in` + `order_items.text_elements` (studio customization) |
+| `006_cad_and_final_sale.sql` | `orders.currency`, final-sale acceptance columns, `payments.currency`, `schema_flags`; converts the USD seed prices to CAD (once) |
 
 `migrate.js` re-runs **every** file on each run, so every migration must
 be idempotent (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`, guarded `DO`
@@ -32,6 +33,9 @@ blocks).
 | discount_amount | numeric(10,2) | quantity discount; product only, never applied to shipping |
 | shipping_amount | numeric(10,2) | sum of each item's shipping (see `shipping_rates`) |
 | total_price | numeric(10,2) | what's charged: `subtotal - discount_amount + shipping_amount` |
+| currency | text | `CAD` (all prices and charges); default `CAD` |
+| final_sale_accepted_at | timestamptz | when the customer ticked the final-sale (no returns) box at checkout; null for orders from before `006` |
+| final_sale_policy_version | text | which version of `policies.html` they accepted, e.g. `2026-10-18` |
 | stripe_session_id | text | nullable until a checkout session is created |
 | stripe_payment_intent_id | text | nullable until paid |
 | created_at | timestamptz | |
@@ -64,9 +68,10 @@ blocks).
 | base_rate | numeric(10,2) | price per unit before any discount |
 | updated_at | timestamptz | |
 
-Unique on `(size_tier, material)`. Seeded with 16 placeholder rows (e.g.
-life-size coroplast `58.00`), which are below the supplier's quoted cost.
-Edit them once margins are settled.
+Unique on `(size_tier, material)`. All amounts are **CAD**. Seeded with 16
+placeholder rows, entered in USD by `001` and converted to CAD by `006`
+(× 1.38, whole dollars), e.g. life-size coroplast 58 → `80`. Edit them
+once margins are settled.
 
 ## `quantity_discount_tiers`
 
@@ -101,13 +106,14 @@ Seeded values (adjust once real costs/margins are known):
 Unique on `(country, size_tier)`. Shipping for one item line is
 `first_unit_rate + additional_unit_rate * (quantity - 1)`.
 
-Seeded values. Only CA / life-size first unit (`122.00`, UPS duty-paid to
-Winnipeg) is from a real supplier quote; the rest are scaled placeholders:
+Seeded values in **CAD** (entered in USD by `002`, converted by `006`). Only
+CA / life-size first unit is from a real supplier quote (US$122, UPS
+duty-paid to Winnipeg ≈ CA$168); the rest are scaled placeholders:
 
 | country | small | medium | life_size | xl |
 |---|---|---|---|---|
-| CA (first / additional) | 60 / 30 | 90 / 45 | 122 / 60 | 150 / 75 |
-| US (first / additional) | 70 / 35 | 100 / 50 | 135 / 65 | 165 / 80 |
+| CA (first / additional) | 83 / 41 | 124 / 62 | 168 / 83 | 207 / 104 |
+| US (first / additional) | 97 / 48 | 138 / 69 | 186 / 90 | 228 / 110 |
 
 ## `payments`
 
@@ -118,6 +124,7 @@ Winnipeg) is from a real supplier quote; the rest are scaled placeholders:
 | provider | text | `stripe` |
 | provider_txn_id | text | Stripe payment intent ID |
 | amount | numeric(10,2) | what Stripe actually charged (`amount_total`), falling back to the order's `total_price` |
+| currency | text | Stripe's currency for `amount` (`CAD`); null on rows from before `006` |
 | status | text (enum) | `pending`, `succeeded`, `failed`, `refunded`. The webhook writes `succeeded`; the rest are for manual use |
 | raw_payload | jsonb | the full Stripe webhook event, for debugging/audit |
 | created_at | timestamptz | |
@@ -142,6 +149,16 @@ without the change, or the change without its event.
 | ip | text | client IP (the real one via Caddy, see `TRUST_PROXY`); null for the webhook |
 | user_agent | text | null for the webhook |
 | created_at | timestamptz | |
+
+## `schema_flags`
+
+| Column | Type | Notes |
+|---|---|---|
+| name | text, pk | a one-time data change that has been applied, e.g. `006_seed_prices_usd_to_cad` |
+| applied_at | timestamptz | |
+
+Because `migrate.js` re-runs every file, one-time **data** changes (like the
+CAD conversion) check and record a flag here, so they can never run twice.
 
 ## Notes
 

@@ -26,7 +26,9 @@ locked in, and without any frontend tooling heavier than plain HTML/CSS/JS.
    - adds it to the **cart** (kept in the browser), and can design more
 3. At `checkout.html` the customer enters email, phone and shipping
    address, sees the full summary, and clicks "Pay with Stripe". Then
-   `POST /api/orders` creates one order with all the cart items, and
+   The customer must tick the final-sale box (custom-made, so no returns;
+   free reprint if damaged). Then `POST /api/orders` creates one order
+   (in CAD) with all the cart items, and
    `POST /api/orders/:id/checkout-session` returns the Stripe redirect URL.
 4. Stripe redirects back to `order-status.html?order=<id>`, which clears
    the cart. A webhook (`POST /api/webhooks/stripe`)

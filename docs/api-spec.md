@@ -25,20 +25,21 @@ below). `GET /health` (outside `/api`) returns `{ "status": "ok" }`.
 
 ### `GET /pricing-config`
 Returns the current `pricing_config` rows, `quantity_discount_tiers` and
-`shipping_rates`, so both `pricing.html` and `create.html` can show
-prices without hardcoding rates.
+`shipping_rates`, so the storefront can show prices without hardcoding
+rates. All amounts are in `currency` (`CAD`).
 
 ```json
 {
   "data": {
+    "currency": "CAD",
     "rates": [
-      { "sizeTier": "life_size", "material": "coroplast", "baseRate": 58.00 }
+      { "sizeTier": "life_size", "material": "coroplast", "baseRate": 80.00 }
     ],
     "discountTiers": [
       { "minQty": 2, "maxQty": 4, "discountPct": 5 }
     ],
     "shippingRates": [
-      { "country": "CA", "sizeTier": "life_size", "firstUnitRate": 122.00, "additionalUnitRate": 60.00 }
+      { "country": "CA", "sizeTier": "life_size", "firstUnitRate": 168.00, "additionalUnitRate": 83.00 }
     ]
   },
   "error": null
@@ -81,6 +82,7 @@ Request:
   "customerEmail": "jane@example.com",
   "customerPhone": "+1-204-555-0100",
   "shippingAddress": { "line1": "...", "line2": "", "city": "...", "region": "...", "postalCode": "...", "country": "CA" },
+  "acceptedFinalSale": true,
   "items": [
     {
       "imageKey": "3f2b7c1e-8d4a-4f6b-9c2e-1a5d7e9f0b3c.jpg",
@@ -100,6 +102,9 @@ Request:
 in the request is ignored, so a 7 ft standee can't be priced as "small".
 
 Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
+- `acceptedFinalSale` must be exactly `true`: the customer ticked "I understand each standee is
+  custom-made and final sale" at checkout. The server stores `finalSaleAcceptedAt` (now) and
+  `finalSalePolicyVersion`, which is evidence if a payment is later disputed.
 - `customerEmail` looks like an email, and `customerPhone` is present.
 - `shippingAddress` has at least `line1` and `city`, and `country` is
   `CA` or `US`.
@@ -118,15 +123,18 @@ Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
     came from `POST /uploads`)
 
 Response (201): the full order, in the same shape as `GET /orders/:id`.
-For 3 × life-size coroplast to CA with the seed config, that's
-`subtotal 174.00`, `discountAmount 8.70`, `shippingAmount 242.00`, and
-`totalPrice 407.30`.
+For 3 × life-size coroplast to CA with the seed config (CAD), that's
+`subtotal 240.00`, `discountAmount 12.00`, `shippingAmount 334.00`, and
+`totalPrice 562.00`, with `currency: "CAD"`.
 
 ### `POST /orders/:id/checkout-session`
 Creates a Stripe Checkout Session for an order that's still
 `pending_payment`. It charges the order's **stored** `totalPrice`, the
-amount computed when the order was created, in USD, as a single line
-item; nothing is recalculated here. Response: `{ "url": "<Stripe checkout URL>" }`.
+amount computed when the order was created, in **CAD**, as a single line
+item; nothing is recalculated here. Stripe's payment page also shows the
+final-sale notice next to the pay button (`custom_text.submit`). If
+Adaptive Pricing is on in the Stripe Dashboard, customers outside Canada
+see their local currency, but the charge still settles in CAD. Response: `{ "url": "<Stripe checkout URL>" }`.
 
 A `paid`/later or `cancelled` order gets 400 `VALIDATION_ERROR`, so a
 paid order can never be charged twice. An unknown ID gets 404.
@@ -143,12 +151,13 @@ Response: the full order.
   "id": "…", "status": "paid",
   "customerEmail": "…", "customerPhone": "…",
   "shippingAddress": { "line1": "…", "city": "…", "region": "…", "postalCode": "…", "country": "CA" },
-  "subtotal": 174, "discountAmount": 8.7, "shippingAmount": 242, "totalPrice": 407.3,
+  "subtotal": 240, "discountAmount": 12, "shippingAmount": 334, "totalPrice": 562, "currency": "CAD",
+  "finalSaleAcceptedAt": "…", "finalSalePolicyVersion": "2026-10-18",
   "stripeSessionId": "…", "createdAt": "…", "updatedAt": "…",
   "items": [
     { "id": "…", "imageKey": "….jpg", "sizeTier": "life_size", "material": "coroplast",
       "heightIn": 68, "widthIn": 51, "textElements": [{ "style": "bubble", "text": "Happy 40th, Dave!" }],
-      "quantity": 3, "unitPrice": 55.1, "lineTotal": 165.3 }
+      "quantity": 3, "unitPrice": 76, "lineTotal": 228 }
   ]
 }
 ```
@@ -173,8 +182,8 @@ Raw body, verified with the `Stripe-Signature` header and
 On `checkout.session.completed`, in one SQL statement, it:
 - marks the order `paid` (only if it was `pending_payment`)
 - writes an `order_status_events` row (`changed_by = stripe-webhook`)
-- writes a `payments` row (the payment intent ID, the amount Stripe
-  actually charged, and the raw event)
+- writes a `payments` row (the payment intent ID, the amount and currency
+  Stripe actually charged, and the raw event)
 
 It then sends the fulfillment email and the customer confirmation. If
 Stripe's amount differs from the order total, it logs a warning. Retries
