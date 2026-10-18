@@ -133,7 +133,17 @@ async function createOrder(input) {
   }
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A malformed ID can't match any order — 404 here instead of a Postgres type error (500). */
+function assertOrderId(orderId) {
+  if (typeof orderId !== "string" || !UUID_PATTERN.test(orderId)) {
+    throw notFoundError("Order not found.");
+  }
+}
+
 async function getOrderById(orderId, { email } = {}) {
+  assertOrderId(orderId);
   const orderResult = await pool.query("SELECT * FROM orders WHERE id = $1", [orderId]);
   if (orderResult.rowCount === 0) {
     throw notFoundError("Order not found.");
@@ -183,19 +193,32 @@ async function setStripeSession(orderId, sessionId) {
   ]);
 }
 
-async function markOrderPaid(orderId, paymentIntentId) {
-  // One statement, so the audit event is written only when the status
-  // actually changed — Stripe webhook retries don't add duplicate events.
+/**
+ * @param {string} orderId
+ * @param {string} paymentIntentId
+ * @param {Object} [payment]
+ * @param {number} [payment.amount] what Stripe actually charged; defaults to the order's total_price
+ * @param {Object} [payment.rawPayload] the webhook event, kept for audit/debugging
+ */
+async function markOrderPaid(orderId, paymentIntentId, { amount, rawPayload } = {}) {
+  assertOrderId(orderId);
+  // One statement, so the status change, its audit event and the payment
+  // row are all-or-nothing, and written only when the status actually
+  // changed — Stripe webhook retries add no duplicates.
   await pool.query(
     `WITH updated AS (
        UPDATE orders
        SET status = 'paid', stripe_payment_intent_id = $1, updated_at = now()
        WHERE id = $2 AND status = 'pending_payment'
-       RETURNING id
+       RETURNING id, total_price
+     ),
+     event AS (
+       INSERT INTO order_status_events (order_id, from_status, to_status, changed_by)
+       SELECT id, 'pending_payment', 'paid', 'stripe-webhook' FROM updated
      )
-     INSERT INTO order_status_events (order_id, from_status, to_status, changed_by)
-     SELECT id, 'pending_payment', 'paid', 'stripe-webhook' FROM updated`,
-    [paymentIntentId, orderId]
+     INSERT INTO payments (order_id, provider, provider_txn_id, amount, status, raw_payload)
+     SELECT id, 'stripe', $1, COALESCE($3::numeric, total_price), 'succeeded', $4 FROM updated`,
+    [paymentIntentId, orderId, amount ?? null, rawPayload ?? null]
   );
   return getOrderById(orderId);
 }
@@ -211,6 +234,7 @@ async function updateOrderStatus(orderId, status, actor) {
   if (!validStatuses.includes(status)) {
     throw validationError(`Invalid status: ${status}`);
   }
+  assertOrderId(orderId);
 
   const client = await pool.connect();
   let fromStatus;
@@ -248,6 +272,7 @@ async function updateOrderStatus(orderId, status, actor) {
 }
 
 async function getStatusEvents(orderId) {
+  assertOrderId(orderId);
   const result = await pool.query(
     `SELECT from_status, to_status, changed_by, ip, user_agent, created_at
      FROM order_status_events WHERE order_id = $1 ORDER BY created_at`,

@@ -27,7 +27,17 @@ router.post("/webhooks/stripe", async (req, res) => {
 
     if (orderId) {
       try {
-        const order = await ordersService.markOrderPaid(orderId, session.payment_intent);
+        // amount_total is in cents; record what Stripe actually charged.
+        const amount = typeof session.amount_total === "number" ? session.amount_total / 100 : undefined;
+        const order = await ordersService.markOrderPaid(orderId, session.payment_intent, {
+          amount,
+          rawPayload: event,
+        });
+        if (amount !== undefined && Math.abs(amount - order.totalPrice) > 0.005) {
+          console.warn(
+            `[stripe] order ${orderId}: Stripe charged ${amount.toFixed(2)} but order total is ${order.totalPrice.toFixed(2)}`
+          );
+        }
         await Promise.all([sendFulfillmentEmail(order), sendCustomerConfirmation(order)]);
       } catch (err) {
         console.error(`Failed to process paid order ${orderId}:`, err);

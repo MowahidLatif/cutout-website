@@ -1,20 +1,38 @@
 # API Spec (v1)
 
-Base path: `/api`. All responses use the `{ data, error }` envelope
-described in `backend-guide.md`.
+Base path: `/api`. JSON responses use the `{ data, error }` envelope
+described in `backend-guide.md`. Exceptions are noted per endpoint.
+
+## Errors
+
+Every failure has the shape
+`{ "data": null, "error": { "message": "...", "code": "..." } }`. The
+`message` is safe to show to the user.
+
+| `code` | HTTP | When |
+|---|---|---|
+| `VALIDATION_ERROR` | 400 | bad input, a failed upload check, an invalid status change, paying an already-paid order |
+| `UNAUTHORIZED` | 401 | admin token missing or wrong |
+| `FORBIDDEN` | 403 | admin request over plain HTTP in production |
+| `NOT_FOUND` | 404 | unknown or malformed order ID, or an email that doesn't match |
+| `RATE_LIMITED` | 429 | too many failed admin attempts (`Retry-After` header, in seconds) |
+| `INTERNAL_ERROR` | 500 | anything unexpected (logged server-side) |
+
+`GET /files/:key` and `POST /webhooks/stripe` don't use the envelope (see
+below). `GET /health` (outside `/api`) returns `{ "status": "ok" }`.
 
 ## Public endpoints
 
 ### `GET /pricing-config`
-Returns current `pricing_config` rows, `quantity_discount_tiers` and
-`shipping_rates`, so both `pricing.html` and `create.html` can compute
+Returns the current `pricing_config` rows, `quantity_discount_tiers` and
+`shipping_rates`, so both `pricing.html` and `create.html` can show
 prices without hardcoding rates.
 
 ```json
 {
   "data": {
     "rates": [
-      { "sizeTier": "life_size", "material": "coroplast", "baseRate": 45.00 }
+      { "sizeTier": "life_size", "material": "coroplast", "baseRate": 58.00 }
     ],
     "discountTiers": [
       { "minQty": 2, "maxQty": 4, "discountPct": 5 }
@@ -27,48 +45,8 @@ prices without hardcoding rates.
 }
 ```
 
-### `POST /orders`
-Creates an order in `pending_payment` status. Recomputes price server-side
-from the submitted size/material/quantity — ignores any price field sent
-by the client.
-
-Request:
-```json
-{
-  "customerEmail": "jane@example.com",
-  "customerPhone": "+1-204-555-0100",
-  "shippingAddress": { "line1": "...", "city": "...", "region": "...", "postalCode": "...", "country": "CA" },
-  "items": [
-    {
-      "imageKey": "3f2b7c1e-8d4a-4f6b-9c2e-1a5d7e9f0b3c.jpg",
-      "sizeTier": "life_size",
-      "material": "coroplast",
-      "heightIn": 68,
-      "quantity": 3
-    }
-  ]
-}
-```
-
-`shippingAddress.country` must be `CA` or `US`. Anything else is a
-`VALIDATION_ERROR`. Each `imageKey` must come from `POST /uploads` and
-the file must actually exist in storage, otherwise `VALIDATION_ERROR`.
-
-Response: the created order, including server-computed `subtotal`,
-`discountAmount`, `shippingAmount`, `totalPrice` (which includes shipping),
-and its `id`.
-
-### `POST /orders/:id/checkout-session`
-Creates a Stripe Checkout Session for an existing `pending_payment` order,
-using its stored (server-computed) `total_price`. Returns the Stripe
-redirect URL.
-
-### `GET /orders/:id?email=...`
-Customer order lookup — requires the order ID and matching email as a
-lightweight guard since there's no auth. Returns status and item summary.
-
 ### `POST /uploads`
-Multipart form with one file field named `image`. Every upload goes
+A multipart form with one file field named `image`. Every upload goes
 through the backend, whichever storage driver is active, so it can be
 checked and cleaned up:
 
@@ -87,28 +65,111 @@ Response (201):
 ```json
 { "data": { "imageKey": "3f2b…0b3c.jpg", "width": 3024, "height": 4032 }, "error": null }
 ```
-Any failed check is a 400 `VALIDATION_ERROR` with a customer-readable
-`message`.
+
+Any failed check, a missing file, or a field not named `image` is a 400
+`VALIDATION_ERROR`. This endpoint is public and not rate-limited yet (a
+known gap).
+
+### `POST /orders`
+Creates an order in `pending_payment` status. The server computes every
+price from its own config (`backend-guide.md`, "Pricing service"); any
+price fields the client sends are ignored.
+
+Request:
+```json
+{
+  "customerEmail": "jane@example.com",
+  "customerPhone": "+1-204-555-0100",
+  "shippingAddress": { "line1": "...", "line2": "", "city": "...", "region": "...", "postalCode": "...", "country": "CA" },
+  "items": [
+    {
+      "imageKey": "3f2b7c1e-8d4a-4f6b-9c2e-1a5d7e9f0b3c.jpg",
+      "sizeTier": "life_size",
+      "material": "coroplast",
+      "heightIn": 68,
+      "quantity": 3,
+      "notes": "optional"
+    }
+  ]
+}
+```
+
+Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
+- `customerEmail` looks like an email, and `customerPhone` is present.
+- `shippingAddress` has at least `line1` and `city`, and `country` is
+  `CA` or `US`.
+- At least one item. Each item needs:
+  - `sizeTier` and `material` from the allowed values
+  - `quantity` ≥ 1 and `heightIn` > 0
+  - an `imageKey` that is well-formed **and** exists in storage (i.e. it
+    came from `POST /uploads`)
+
+Response (201): the full order, in the same shape as `GET /orders/:id`.
+For 3 × life-size coroplast to CA with the seed config, that's
+`subtotal 174.00`, `discountAmount 8.70`, `shippingAmount 242.00`, and
+`totalPrice 407.30`.
+
+### `POST /orders/:id/checkout-session`
+Creates a Stripe Checkout Session for an order that's still
+`pending_payment`. It charges the order's **stored** `totalPrice`, the
+amount computed when the order was created, in USD, as a single line
+item; nothing is recalculated here. Response: `{ "url": "<Stripe checkout URL>" }`.
+
+A `paid`/later or `cancelled` order gets 400 `VALIDATION_ERROR`, so a
+paid order can never be charged twice. An unknown ID gets 404.
+
+### `GET /orders/:id?email=...`
+Customer order lookup. There are no accounts, so the order ID plus the
+**required** matching email (case-insensitive) is the only guard. A
+missing, blank or wrong email, or an unknown or malformed ID, all give the
+same 404, so none of them reveals whether the order exists.
+
+Response: the full order.
+```json
+{
+  "id": "…", "status": "paid",
+  "customerEmail": "…", "customerPhone": "…",
+  "shippingAddress": { "line1": "…", "city": "…", "region": "…", "postalCode": "…", "country": "CA" },
+  "subtotal": 174, "discountAmount": 8.7, "shippingAmount": 242, "totalPrice": 407.3,
+  "stripeSessionId": "…", "createdAt": "…", "updatedAt": "…",
+  "items": [
+    { "id": "…", "imageKey": "….jpg", "sizeTier": "life_size", "material": "coroplast",
+      "heightIn": 68, "quantity": 3, "unitPrice": 55.1, "lineTotal": 165.3 }
+  ]
+}
+```
 
 ### `GET /files/:key?exp=…&sig=…`
 An expiring download link for an uploaded image (HMAC-SHA256 over
-`key.exp` with `FILE_LINK_SECRET`). The links come from the fulfillment
-email and the admin endpoints; nothing public hands them out. With
-`STORAGE_DRIVER=disk` it streams the file as an attachment. With `s3` it
-302-redirects to a 5-minute S3 presigned URL (S3's own links can't last
-30 days). A bad key, a bad signature or an expired link all return a plain
-404.
+`key.exp` with `FILE_LINK_SECRET`). Links are only issued by the
+fulfillment email and the admin endpoints. With `STORAGE_DRIVER=disk`
+it streams the file as an attachment. With `s3` it 302-redirects to a
+5-minute S3 presigned URL, because S3's own links can't last 30 days.
 
-Individual links can't be revoked. Rotating `FILE_LINK_SECRET` invalidates
-every outstanding link.
+A bad key, a bad signature or an expired link all return a plain-text
+404, not the JSON envelope. Individual links can't be revoked; rotating
+`FILE_LINK_SECRET` invalidates every outstanding link.
 
 ## Webhook
 
 ### `POST /webhooks/stripe`
-Raw body, verified via Stripe signature header. Handles
-`checkout.session.completed` → marks the order `paid`, records the
-`payment`, triggers the SES fulfillment + customer confirmation emails.
-This is the only path allowed to mark an order paid.
+Raw body, verified with the `Stripe-Signature` header and
+`STRIPE_WEBHOOK_SECRET`. A bad signature gets 400 (plain text).
+
+On `checkout.session.completed`, in one SQL statement, it:
+- marks the order `paid` (only if it was `pending_payment`)
+- writes an `order_status_events` row (`changed_by = stripe-webhook`)
+- writes a `payments` row (the payment intent ID, the amount Stripe
+  actually charged, and the raw event)
+
+It then sends the fulfillment email and the customer confirmation. If
+Stripe's amount differs from the order total, it logs a warning. Retries
+of the same event change nothing. This is the only path that can mark an
+order paid.
+
+It always responds `{ "received": true }` once the signature checks out,
+even if processing failed (the failure is logged). A retry wouldn't fix a
+bug on our side.
 
 ## Admin endpoints
 
@@ -140,15 +201,17 @@ either admins or customers.
 `frontend/admin.html` asks for the name and token once per browser tab
 and keeps them in `sessionStorage`, which is cleared when the tab closes.
 
-### `GET /admin/orders`
-Lists orders, filterable by `status`, for the manual fulfillment workflow.
+### `GET /admin/orders?status=...`
+Lists orders, newest first, optionally filtered by `status`. Each item is
+`{ "id", "customerEmail", "status", "totalPrice", "createdAt" }`.
 
 ### `GET /admin/orders/:id`
-The full order (same shape as the customer lookup). Each item also has
-`downloadUrl` and `downloadExpiresAt`, a freshly signed link valid for
-`DOWNLOAD_LINK_TTL_DAYS` (default 30). Also includes `statusEvents`, the
-order's status history, oldest first:
-`[{ "fromStatus", "toStatus", "changedBy", "ip", "userAgent", "createdAt" }]`.
+The full order (same shape as the customer lookup), plus:
+- each item gets `downloadUrl` and `downloadExpiresAt`, a freshly signed
+  link valid for `DOWNLOAD_LINK_TTL_DAYS` (default 30). Both are `null`
+  for items from before `003_image_key.sql`.
+- `statusEvents`: the status history, oldest first:
+  `[{ "fromStatus", "toStatus", "changedBy", "ip", "userAgent", "createdAt" }]`.
 
 ### `POST /admin/orders/:id/download-links`
 Issues new links for every item in the order:
@@ -157,10 +220,13 @@ Issues new links for every item in the order:
 expired.
 
 ### `PATCH /admin/orders/:id/status`
-Updates an order's status (`in_production`, `shipped`, `delivered`,
-`cancelled`). Triggers a customer email on `shipped`. Setting the status
-the order already has is a 400, which also stops a duplicate "shipped"
-email. Every change writes an `order_status_events` row (`X-Admin-Name`,
-IP, user agent) in the same transaction, plus a console line:
-`[admin] <name>@<ip> changed order <id> <from> → <to>`. The Stripe
-webhook's `pending_payment → paid` is recorded too, as `stripe-webhook`.
+Body: `{ "status": "in_production" | "shipped" | "delivered" | "cancelled" }`.
+`paid` can't be set here; only the webhook does that. Returns the
+updated order.
+
+- Setting the status the order already has is a 400. That also stops a
+  duplicate "shipped" email.
+- `shipped` emails the customer.
+- Each change writes an `order_status_events` row (`X-Admin-Name`, IP,
+  user agent) in the same transaction, and logs a console line:
+  `[admin] <name>@<ip> changed order <id> <from> → <to>`.

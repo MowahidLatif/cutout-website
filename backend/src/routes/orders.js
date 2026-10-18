@@ -25,9 +25,13 @@ router.post("/orders", async (req, res) => {
 
 router.get("/orders/:id", async (req, res) => {
   try {
-    const order = await ordersService.getOrderById(req.params.id, {
-      email: req.query.email,
-    });
+    // The email is the only guard on this public lookup, so it's required.
+    // Missing gets the same 404 as wrong, so neither reveals that the order exists.
+    const email = typeof req.query.email === "string" ? req.query.email.trim() : "";
+    if (!email) {
+      throw Object.assign(new Error("Order not found."), { code: "NOT_FOUND" });
+    }
+    const order = await ordersService.getOrderById(req.params.id, { email });
     ok(res, order);
   } catch (err) {
     fail(res, err);
@@ -37,6 +41,17 @@ router.get("/orders/:id", async (req, res) => {
 router.post("/orders/:id/checkout-session", async (req, res) => {
   try {
     const order = await ordersService.getOrderById(req.params.id);
+    if (order.status !== "pending_payment") {
+      // Never open a second payment for an order that's already paid (or cancelled).
+      throw Object.assign(
+        new Error(
+          order.status === "cancelled"
+            ? "This order was cancelled."
+            : "This order has already been paid."
+        ),
+        { code: "VALIDATION_ERROR" }
+      );
+    }
     const session = await createCheckoutSession(order);
     await ordersService.setStripeSession(order.id, session.id);
     ok(res, { url: session.url });
