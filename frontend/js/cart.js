@@ -67,6 +67,21 @@
     return read().reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
   }
 
+  /** Order-limit inputs: total cutouts and number of different photos. */
+  function totals(items = read()) {
+    return {
+      quantity: items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
+      uniqueImages: new Set(items.map((item) => item.imageKey)).size,
+    };
+  }
+
+  /** Adds several items at once (one write, one badge update). */
+  function addMany(newItems) {
+    const items = read();
+    newItems.forEach((item) => items.push({ ...item, id: newId() }));
+    write(items);
+  }
+
   function renderCounts() {
     const n = count();
     document.querySelectorAll("[data-cart-count]").forEach((el) => {
@@ -106,5 +121,5 @@
     if (e.key === KEY) renderCounts();
   });
 
-  window.Cart = { get, add, update, remove, clear, count, renderCounts, makeThumbnail };
+  window.Cart = { get, add, addMany, update, remove, clear, count, totals, renderCounts, makeThumbnail };
 })();

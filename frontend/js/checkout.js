@@ -33,7 +33,7 @@
 
   // ---------- Helpers ----------
   function formatCurrency(n) {
-    return "$" + Number(n).toFixed(2);
+    return "$" + Number(n).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   function formatFeetInches(inches) {
@@ -66,13 +66,30 @@
       rates: pricingConfig.rates,
       discountTiers: pricingConfig.discountTiers,
     });
-    const shipping = Pricing.calculateShipping({
-      country: fields.country.value,
-      sizeTier,
-      quantity: item.quantity,
-      shippingRates: pricingConfig.shippingRates,
-    });
-    return { sizeTier, price, shipping };
+    return { sizeTier, price };
+  }
+
+  /** What breaks the per-order limits, if anything (e.g. an old cart). */
+  function limitProblem(items) {
+    const { quantity, uniqueImages } = Cart.totals(items);
+    if (quantity > SITE.maxOrderQuantity) {
+      return `An order can have at most ${SITE.maxOrderQuantity} cutouts — your cart has ${quantity}. Lower some quantities.`;
+    }
+    if (uniqueImages > SITE.maxUniqueImages) {
+      return `An order can have at most ${SITE.maxUniqueImages} different photos — your cart has ${uniqueImages}. Remove some designs.`;
+    }
+    return null;
+  }
+
+  /** Quantity dropdown for one item: 1 … what's left of the 500 after the other items. */
+  function quantitySelect(item, items) {
+    const others = items.filter((i) => i.id !== item.id).reduce((n, i) => n + i.quantity, 0);
+    const max = Math.max(item.quantity, Math.max(1, SITE.maxOrderQuantity - others));
+    let options = "";
+    for (let n = 1; n <= max; n++) {
+      options += `<option value="${n}"${n === item.quantity ? " selected" : ""}>${n}</option>`;
+    }
+    return `<label class="qty-select">Qty <select data-qty-select aria-label="Quantity">${options}</select></label>`;
   }
 
   // ---------- Render ----------
@@ -103,11 +120,7 @@
             ${texts ? `<p class="cart-item__meta">${texts}</p>` : ""}
           </div>
           <div class="cart-item__actions">
-            <div class="stepper" aria-label="Quantity">
-              <button type="button" data-qty="-1" aria-label="Fewer"${item.quantity <= 1 ? " disabled" : ""}><svg class="icon"><use href="#i-minus"/></svg></button>
-              <input type="number" min="1" max="99" value="${item.quantity}" aria-label="Quantity" data-qty-input />
-              <button type="button" data-qty="1" aria-label="More"><svg class="icon"><use href="#i-plus"/></svg></button>
-            </div>
+            ${quantitySelect(item, items)}
             <span class="cart-item__price">${priced && priced.price ? formatCurrency(priced.price.total) : ""}</span>
             <button type="button" class="link-accent" data-remove style="font-size:0.9rem">Remove</button>
           </div>
@@ -126,21 +139,27 @@
     }
     let subtotal = 0;
     let itemsTotal = 0;
-    let shipping = 0;
-    let shippingKnown = Boolean(fields.country.value);
+    const shippingItems = [];
     for (const item of items) {
-      const { price, shipping: s } = priceItem(item);
+      const { sizeTier, price } = priceItem(item);
       if (!price) continue;
       subtotal += price.subtotal;
       itemsTotal += price.total;
-      if (s === null) shippingKnown = false;
-      else shipping += s;
+      shippingItems.push({ sizeTier, quantity: item.quantity });
     }
+    // Shipping is priced for the whole order: one first-unit charge.
+    const shipping = Pricing.calculateOrderShipping({
+      country: fields.country.value,
+      items: shippingItems,
+      shippingRates: pricingConfig.shippingRates,
+    });
+    const shippingKnown = shipping !== null;
     const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
     const discount = round2(subtotal - itemsTotal);
     const count = items.reduce((n, i) => n + i.quantity, 0);
+    const designs = items.length;
 
-    const rows = [[`Standees (${count})`, formatCurrency(subtotal)]];
+    const rows = [[`${count} cutout${count === 1 ? "" : "s"} · ${designs} design${designs === 1 ? "" : "s"}`, formatCurrency(subtotal)]];
     if (discount > 0) rows.push(["Bulk discount", "−" + formatCurrency(discount), "is-discount"]);
     rows.push(["Shipping", shippingKnown ? formatCurrency(shipping) : "Choose a country"]);
     rows.push([`Total (${pricingConfig.currency || SITE.currency})`, formatCurrency(round2(itemsTotal + (shippingKnown ? shipping : 0))), "is-total"]);
@@ -148,7 +167,10 @@
     summaryEl.innerHTML = rows
       .map(([dt, dd, cls]) => `<div class="${cls || ""}"><dt>${dt}</dt><dd>${dd}</dd></div>`)
       .join("");
-    submitBtn.disabled = false;
+
+    const problem = limitProblem(items);
+    submitBtn.disabled = Boolean(problem);
+    if (problem) showStatus(problem, { scroll: false });
   }
 
   // ---------- Cart edits ----------
@@ -157,20 +179,18 @@
     if (!row) return;
     const item = Cart.get().find((i) => i.id === row.dataset.id);
     if (!item) return;
-    const step = e.target.closest("[data-qty]");
-    if (step) {
-      Cart.update(item.id, { quantity: Math.min(99, Math.max(1, item.quantity + Number(step.dataset.qty))) });
-      render();
-    } else if (e.target.closest("[data-remove]")) {
+    if (e.target.closest("[data-remove]")) {
       Cart.remove(item.id);
+      hideStatus();
       render();
     }
   });
 
   listEl.addEventListener("change", (e) => {
-    if (!e.target.matches("[data-qty-input]")) return;
+    if (!e.target.matches("[data-qty-select]")) return;
     const id = e.target.closest(".cart-item").dataset.id;
-    Cart.update(id, { quantity: Math.min(99, Math.max(1, Math.round(Number(e.target.value)) || 1)) });
+    Cart.update(id, { quantity: Math.max(1, Math.round(Number(e.target.value)) || 1) });
+    hideStatus();
     render();
   });
 
@@ -261,10 +281,10 @@
     }
   });
 
-  function showStatus(message) {
+  function showStatus(message, { scroll = true } = {}) {
     statusEl.textContent = message;
     statusEl.classList.add("visible");
-    statusEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (scroll) statusEl.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   function hideStatus() {

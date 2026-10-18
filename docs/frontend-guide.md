@@ -31,7 +31,7 @@ frontend/
     ├── icons.js          — inline SVG icon sprite; first script in <body>
     ├── site-config.js    — window.SITE: every hard-coded storefront value
     ├── pricing.js        — window.Pricing: sizeTierForHeight, calculatePrice,
-    │                       calculateShipping (mirror of the backend)
+    │                       calculateOrderShipping (mirror of the backend)
     ├── api.js            — window.Api: tiny fetch() wrapper
     ├── cart.js           — window.Cart: the cart in localStorage
     ├── layout.js         — mobile nav toggle, footer year, cart badge
@@ -132,9 +132,10 @@ transitions.
 
 ## `cart.js`: the cart
 
-`window.Cart` has `get()`, `add(item)`, `update(id, changes)`,
-`remove(id)`, `clear()`, `count()` (the sum of quantities) and
-`makeThumbnail(src)`.
+`window.Cart` has `get()`, `add(item)`, `addMany(items)`,
+`update(id, changes)`, `remove(id)`, `clear()`, `count()` (the sum of
+quantities), `totals()` (`{ quantity, uniqueImages }`, for the order
+limits) and `makeThumbnail(src)`.
 
 - An item is `{ id, imageKey, thumbnail, heightIn, widthIn, material,
   quantity, textElements }`. The photo itself is already on the server
@@ -155,10 +156,23 @@ transitions.
    - "Try a sample", and the trust points
    - the hero image with the price sticker and the "5'7"" stat card
 2. **Studio (`#studio`, `js/studio.js`):**
-   - **Upload:** the photo is sent to `POST /api/uploads` **as soon as
-     it's chosen**. Files over 25 MB are rejected in the browser first.
-     Server rejections (too small, not an image, HEIC) show under the
-     preview and in the price card.
+   - **Upload (multi-photo):**
+     - Choose or drop **several photos at once** (the input has `multiple`).
+       Each becomes a *design* in `state.designs` and uploads to
+       `POST /api/uploads` straight away. Files over 25 MB are rejected in
+       the browser first.
+     - **Photo tray:** one card per photo, with a thumbnail, its upload
+       status (or the server's rejection reason), a **quantity dropdown**,
+       and remove. Click a card to edit that photo; the size, text and
+       material controls and the preview all follow the selected photo.
+     - An "Add photos" tile shows how many more are allowed.
+   - **Order limits:** at most `SITE.maxUniqueImages` (10) different photos
+     and `SITE.maxOrderQuantity` (500) cutouts per order, counting what's
+     already in the cart (`Cart.totals()`).
+     - Extra photos are skipped with a message.
+     - Each quantity dropdown offers 1 … whatever is left of the 500. With
+       up to 500 options, the price-card copy is only rebuilt when its value
+       or ceiling changes.
    - **To-scale preview:**
      - a 9 ft wall with a 1–8 ft ruler; `--ppi` (pixels per inch) is set
        from the stage height and recomputed on resize
@@ -173,21 +187,31 @@ transitions.
      characters each), shown on the preview.
    - **③ Material:** radio cards from `SITE.materials`.
    - **Price card:**
-     - the live price for the height-derived tier, the breakdown (base ×
-       quantity, bulk discount), and a quantity stepper
-     - the delivery estimate (today + `SITE` business days) and the
+     - covers **every photo in the tray**: "Your standees · 3 designs · 27
+       cutouts", the total, and one line per design (tier × quantity, its
+       own bulk discount). With a single photo it shows base × quantity and
+       the discount, as before.
+     - a quantity dropdown for the selected photo (kept in sync with its
+       tray card)
+     - the delivery estimate (today + `SITE` business days) and order-level
        shipping to `SITE.defaultCountry`
-     - **Add to cart**, disabled with a reason until a real photo is uploaded
+     - **"Add 3 designs to cart"** adds each design as its own cart item
+       (`Cart.addMany`), then clears the tray. It's disabled with a reason
+       until every photo has uploaded, every size is valid, and the limits
+       hold.
    - The sample photo is preview-only and can't be ordered.
 3. **How it works:** 4 numbered cards.
 4. **Wall of fame:** 4 staggered cards and a "Make yours" button (→ `#studio`).
 
 ### `checkout.html`: Cart & checkout (`js/checkout.js`)
 - **Cart items:** thumbnail, tier and material, height × width, texts, a
-  quantity stepper, the line price, and Remove.
+  **quantity dropdown** (1 … 500 minus the other items), the line price,
+  and Remove. If the cart breaks a limit (e.g. an old cart), checkout says
+  so and disables Pay.
 - **Contact + shipping address:** country is `CA`/`US` and drives shipping.
-- **Summary:** standees (pre-discount), bulk discount, shipping (once a
-  country is chosen) and the total, labelled CAD.
+- **Summary:** "27 cutouts · 3 designs" (pre-discount), bulk discount,
+  order-level shipping (once a country is chosen), and the total, labelled
+  CAD.
 - **Final-sale checkbox (required):** "I understand each standee is
   custom-made… final sale". Pay is blocked until it's ticked, and the order
   is sent with `acceptedFinalSale: true`.
@@ -238,8 +262,9 @@ sizeTierForHeight(heightIn)
 calculatePrice({ sizeTier, material, quantity, rates, discountTiers })
 // → { baseRate, unitPrice, discountPct, subtotal, discountAmount, total } or null
 
-calculateShipping({ country, sizeTier, quantity, shippingRates })
-// → first_unit_rate + additional_unit_rate * (quantity - 1), or null
+calculateOrderShipping({ country, items: [{ sizeTier, quantity }], shippingRates })
+// → one first-unit charge (largest size) + every other cutout at its size's
+//   additional rate, or null if no country / no rate
 ```
 
 - `rates`, `discountTiers` and `shippingRates` come from

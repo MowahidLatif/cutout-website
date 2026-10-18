@@ -14,7 +14,10 @@ locked in, and without any frontend tooling heavier than plain HTML/CSS/JS.
    how it works → gallery). The prices on `pricing.html` come live from
    `GET /api/pricing-config`.
 2. In the **studio** (`index.html#studio`):
-   - uploads a photo (validated and auto-rotated by the backend right away)
+   - uploads one or more photos at once, up to 10 per order (each validated
+     and auto-rotated by the backend right away), and picks a quantity for
+     each from a dropdown (up to 500 cutouts per order). Example: CEO × 5,
+     mascot × 20, speaker × 2 = 27 cutouts across 3 designs.
    - sets the real-world height (1–8 ft, manual, not AI-detected); the
      size tier and price follow from the height, and the width follows
      from the photo's proportions unless unlocked

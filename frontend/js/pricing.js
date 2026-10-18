@@ -46,31 +46,47 @@
   }
 
   /**
-   * Shipping for one line: first unit at the full rate, each additional
-   * unit at the cheaper rate. Mirrors calculateShipping in the backend.
+   * Shipping for a whole order: the first-unit rate is charged once, for the
+   * "lead" item (the size with the highest first-unit rate); every other
+   * cutout ships at its own size's additional rate. Mirrors shippingForItems /
+   * calculateOrderShipping in the backend — keep them identical.
    *
    * @param {Object} params
    * @param {string} params.country
-   * @param {string} params.sizeTier
-   * @param {number} params.quantity
+   * @param {Array<{sizeTier:string, quantity:number}>} params.items
    * @param {Array<{country:string, sizeTier:string, firstUnitRate:number, additionalUnitRate:number}>} params.shippingRates
-   * @returns {number | null}
+   * @returns {number | null} null if the country isn't chosen or a size has no rate
    */
-  function calculateShipping({ country, sizeTier, quantity, shippingRates }) {
-    if (!country || !sizeTier || !quantity || quantity < 1) {
-      return null;
-    }
+  function calculateOrderShipping({ country, items, shippingRates }) {
+    if (!country || !items || !items.length) return null;
+    const ratesByTier = {};
+    (shippingRates || [])
+      .filter((r) => r.country === country)
+      .forEach((r) => {
+        ratesByTier[r.sizeTier] = {
+          firstUnitRate: Number(r.firstUnitRate),
+          additionalUnitRate: Number(r.additionalUnitRate),
+        };
+      });
 
-    const rateRow = (shippingRates || []).find(
-      (s) => s.country === country && s.sizeTier === sizeTier
-    );
-    if (!rateRow) {
-      return null;
+    let lead = null;
+    let additionalTotal = 0;
+    for (const item of items) {
+      const rate = ratesByTier[item.sizeTier];
+      if (!rate || !item.quantity || item.quantity < 1) return null;
+      additionalTotal += rate.additionalUnitRate * item.quantity;
+      // Highest first-unit rate leads; ties go to the bigger first-unit premium.
+      if (
+        !lead ||
+        rate.firstUnitRate > lead.firstUnitRate ||
+        (rate.firstUnitRate === lead.firstUnitRate &&
+          rate.firstUnitRate - rate.additionalUnitRate > lead.firstUnitRate - lead.additionalUnitRate)
+      ) {
+        lead = rate;
+      }
     }
-
-    return round2(
-      Number(rateRow.firstUnitRate) + Number(rateRow.additionalUnitRate) * (quantity - 1)
-    );
+    // The lead's first cutout pays the full rate instead of the additional one.
+    return round2(additionalTotal + lead.firstUnitRate - lead.additionalUnitRate);
   }
 
   /**
@@ -92,5 +108,5 @@
     return Math.round((n + Number.EPSILON) * 100) / 100;
   }
 
-  window.Pricing = { calculatePrice, calculateShipping, sizeTierForHeight };
+  window.Pricing = { calculatePrice, calculateOrderShipping, sizeTierForHeight };
 })();

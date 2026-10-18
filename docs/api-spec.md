@@ -112,7 +112,7 @@ Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
   - `material`: one of `cardboard`, `coroplast`, `foam_board`, `acrylic`.
     The storefront only offers `coroplast` ("Premium Corrugated") for now,
     but the API accepts any configured material.
-  - `quantity`: a whole number ≥ 1.
+  - `quantity`: a whole number from 1 to 500.
   - `heightIn`: 12–96 (1–8 ft).
   - `widthIn` (optional): 6–96. The studio sends the printed width, either
     auto-calculated from the photo's proportions or set by hand.
@@ -121,6 +121,14 @@ Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
     Text is trimmed.
   - an `imageKey` that is well-formed **and** exists in storage (i.e. it
     came from `POST /uploads`)
+- **Per-order limits:** at most **500 cutouts** in total (the sum of every
+  item's `quantity`) and at most **10 different photos** (distinct
+  `imageKey`s; the same photo used for two sizes counts once).
+  Example: CEO × 5, mascot × 20, speaker × 2 = 27 cutouts, 3 photos.
+
+Pricing: each item gets its own bulk discount from its own quantity.
+Shipping is priced for the whole order, with one first-unit charge (see
+`database-schema.md`, `shipping_rates`).
 
 Response (201): the full order, in the same shape as `GET /orders/:id`.
 For 3 × life-size coroplast to CA with the seed config (CAD), that's

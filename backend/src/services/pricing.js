@@ -107,37 +107,70 @@ async function calculatePrice({ sizeTier, material, quantity }) {
 }
 
 /**
- * Shipping for one line: first unit at the full rate, each additional unit
- * at the cheaper rate. The quantity discount never applies to shipping.
+ * Shipping for a whole order: the first-unit rate is charged once per
+ * order, for the "lead" item (the size with the highest first-unit rate),
+ * and every other cutout ships at its own size's cheaper additional rate:
  *
+ *   lead.first + lead.additional × (lead.qty − 1) + Σ others (additional × qty)
+ *
+ * A single-item order gives the same result as before. The quantity
+ * discount never applies to shipping. Pure function — identical copy in
+ * frontend/js/pricing.js.
+ *
+ * @param {Array<{ sizeTier: string, quantity: number }>} items
+ * @param {Object<string, { firstUnitRate: number, additionalUnitRate: number }>} ratesByTier
+ *   the destination country's rates, keyed by size tier
+ * @returns {number|null} null if any item's size has no rate
+ */
+function shippingForItems(items, ratesByTier) {
+  let lead = null;
+  let additionalTotal = 0;
+  for (const item of items) {
+    const rate = ratesByTier[item.sizeTier];
+    if (!rate) return null;
+    additionalTotal += rate.additionalUnitRate * item.quantity;
+    // Highest first-unit rate leads; ties go to the bigger first-unit premium.
+    if (
+      !lead ||
+      rate.firstUnitRate > lead.firstUnitRate ||
+      (rate.firstUnitRate === lead.firstUnitRate &&
+        rate.firstUnitRate - rate.additionalUnitRate > lead.firstUnitRate - lead.additionalUnitRate)
+    ) {
+      lead = rate;
+    }
+  }
+  if (!lead) return 0;
+  // The lead's first cutout pays the full rate instead of the additional one.
+  return round2(additionalTotal + lead.firstUnitRate - lead.additionalUnitRate);
+}
+
+/**
  * @param {Object} params
  * @param {string} params.country
- * @param {string} params.sizeTier
- * @param {number} params.quantity
+ * @param {Array<{ sizeTier: string, quantity: number }>} params.items
  * @returns {Promise<number>}
  */
-async function calculateShipping({ country, sizeTier, quantity }) {
-  if (!quantity || quantity < 1) {
-    throw Object.assign(new Error("Quantity must be at least 1."), {
-      code: "VALIDATION_ERROR",
-    });
-  }
-
+async function calculateOrderShipping({ country, items }) {
   const result = await pool.query(
-    `SELECT first_unit_rate, additional_unit_rate FROM shipping_rates
-     WHERE country = $1 AND size_tier = $2`,
-    [country, sizeTier]
+    "SELECT size_tier, first_unit_rate, additional_unit_rate FROM shipping_rates WHERE country = $1",
+    [country]
   );
-  if (result.rowCount === 0) {
+  const ratesByTier = {};
+  for (const r of result.rows) {
+    ratesByTier[r.size_tier] = {
+      firstUnitRate: Number(r.first_unit_rate),
+      additionalUnitRate: Number(r.additional_unit_rate),
+    };
+  }
+  const shipping = shippingForItems(items, ratesByTier);
+  if (shipping === null) {
+    const missing = items.find((i) => !ratesByTier[i.sizeTier]);
     throw Object.assign(
-      new Error(`Shipping isn't available to "${country}" for size "${sizeTier}".`),
+      new Error(`Shipping isn't available to "${country}" for size "${missing.sizeTier}".`),
       { code: "VALIDATION_ERROR" }
     );
   }
-  const firstUnitRate = Number(result.rows[0].first_unit_rate);
-  const additionalUnitRate = Number(result.rows[0].additional_unit_rate);
-
-  return round2(firstUnitRate + additionalUnitRate * (quantity - 1));
+  return shipping;
 }
 
 module.exports = {
@@ -146,5 +179,6 @@ module.exports = {
   sizeTierForHeight,
   getPricingConfig,
   calculatePrice,
-  calculateShipping,
+  shippingForItems,
+  calculateOrderShipping,
 };

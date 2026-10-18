@@ -1,37 +1,49 @@
 /**
- * Page logic for the studio on index.html: upload a photo, size it against
- * a to-scale wall, add text, pick a material, see the live price, and add
- * the design to the cart.
+ * Page logic for the studio on index.html: upload up to 10 photos, give each
+ * its own size, text, material and quantity, see the selected one to scale
+ * against a wall, see the live price for all of them, and add them to the
+ * cart in one go.
  *
- * The price shown here comes from js/pricing.js + GET /api/pricing-config
- * and is only for instant feedback — the backend recomputes everything
+ * Prices shown here come from js/pricing.js + GET /api/pricing-config and
+ * are only for instant feedback — the backend recomputes everything
  * (including the size tier, from the height) when the order is placed.
  */
 (function () {
   const SITE = window.SITE;
 
+  /** A fresh set of design settings (also used before any photo is added). */
+  function defaultSettings() {
+    return {
+      heightIn: SITE.defaultHeightIn,
+      lockProportions: true,
+      manualWidthIn: 24,
+      texts: [], // [{ style, text }]
+      material: SITE.materials.find((m) => !m.comingSoon).id,
+      quantity: 1,
+    };
+  }
+
   const state = {
-    pricingConfig: null, // { rates, discountTiers, shippingRates }
-    file: null,
-    objectUrl: null,
-    aspect: null, // photo width / height
-    isSample: false,
-    uploadPromise: null, // resolves to the imageKey, rejects with the server's reason
-    imageKey: null,
-    uploadError: null,
-    heightIn: SITE.defaultHeightIn,
-    lockProportions: true,
-    manualWidthIn: 24,
-    texts: [], // [{ style, text }]
-    material: SITE.materials.find((m) => !m.comingSoon).id,
-    quantity: 1,
+    pricingConfig: null, // { currency, rates, discountTiers, shippingRates }
+    // One design per photo:
+    // { id, name, file, objectUrl, src, aspect, isSample, uploadPromise, imageKey,
+    //   uploadError, ...settings }
+    designs: [],
+    activeId: null,
+    // Settings edited before any photo is added; new photos start from these.
+    draft: defaultSettings(),
     reference: "person",
+    photoCounter: 0,
   };
 
   const $ = (id) => document.getElementById(id);
   const els = {
     input: $("photo-input"),
     heroDropzone: $("hero-dropzone"),
+    tray: $("photo-tray"),
+    traySummary: $("tray-summary"),
+    trayList: $("tray-list"),
+    trayMessage: $("tray-message"),
     stage: $("stage"),
     wall: $("stage-wall"),
     grid: $("stage-grid"),
@@ -63,15 +75,16 @@
     addText: $("add-text"),
     textList: $("text-list"),
     materialOptions: $("material-options"),
+    priceLabel: $("price-label"),
     priceTotal: $("price-total"),
     priceLines: $("price-lines"),
     qty: $("qty"),
-    qtyMinus: $("qty-minus"),
-    qtyPlus: $("qty-plus"),
+    qtyLabel: $("qty-label"),
     discountTag: $("discount-tag"),
     deliveryTitle: $("delivery-title"),
     deliverySub: $("delivery-sub"),
     addToCart: $("add-to-cart"),
+    addToCartLabel: $("add-to-cart-label"),
     priceNote: $("price-note"),
   };
 
@@ -84,7 +97,7 @@
   }
 
   function formatCurrency(n) {
-    return "$" + Number(n).toFixed(2);
+    return "$" + Number(n).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   function escapeHtml(value) {
@@ -111,35 +124,80 @@
     return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   }
 
-  /** The printed width: from the photo's proportions, or the customer's own value. */
-  function currentWidthIn() {
-    if (!state.lockProportions) return state.manualWidthIn;
-    if (!state.aspect) return null;
-    return Math.round(state.heightIn * state.aspect * 2) / 2;
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  /** The design the controls are editing (or the draft, before any photo). */
+  function active() {
+    return state.designs.find((d) => d.id === state.activeId) || state.draft;
   }
 
-  function widthProblem() {
-    const w = currentWidthIn();
+  /** Designs that can actually be ordered (real photos, not the sample). */
+  function realDesigns() {
+    return state.designs.filter((d) => !d.isSample);
+  }
+
+  /** The printed width: from the photo's proportions, or the customer's own value. */
+  function widthOf(design) {
+    if (!design.lockProportions) return design.manualWidthIn;
+    if (!design.aspect) return null;
+    return Math.round(design.heightIn * design.aspect * 2) / 2;
+  }
+
+  function widthProblem(design) {
+    const w = widthOf(design);
     if (w === null) return null;
     if (w > SITE.widthMaxIn) {
-      return `At this height your photo would be ${formatFeetInches(w)} wide — the maximum is ${SITE.widthMaxIn / 12} ft. Lower the height or unlock proportions.`;
+      return `At this height the photo would be ${formatFeetInches(w)} wide — the maximum is ${SITE.widthMaxIn / 12} ft. Lower the height or unlock proportions.`;
     }
     if (w < SITE.widthMinIn) {
-      return `At this height your photo would be only ${Math.round(w)}" wide — the minimum is ${SITE.widthMinIn}". Increase the height.`;
+      return `At this height the photo would be only ${Math.round(w)}" wide — the minimum is ${SITE.widthMinIn}". Increase the height.`;
     }
     return null;
   }
 
-  // ---------- Photo: choose, preview, upload ----------
+  // ---------- Order limits (tray + what's already in the cart) ----------
+  function cartTotals() {
+    return Cart.totals();
+  }
+
+  function trayQuantity(except) {
+    return realDesigns()
+      .filter((d) => d !== except)
+      .reduce((sum, d) => sum + d.quantity, 0);
+  }
+
+  /** Highest quantity this design can have without the order passing 500. */
+  function maxQuantityFor(design) {
+    const others = cartTotals().quantity + trayQuantity(design);
+    return Math.max(design.quantity, Math.max(1, SITE.maxOrderQuantity - others));
+  }
+
+  function photoSlotsLeft() {
+    return SITE.maxUniqueImages - cartTotals().uniqueImages - realDesigns().length;
+  }
+
+  function quantityOptions(selected, max) {
+    let html = "";
+    for (let n = 1; n <= max; n++) {
+      html += `<option value="${n}"${n === selected ? " selected" : ""}>${n}</option>`;
+    }
+    return html;
+  }
+
+  // ---------- Adding photos ----------
   function openPicker() {
     els.input.click();
   }
 
   function wireDropzone(zone, { scrollToStudio }) {
-    zone.addEventListener("click", openPicker);
+    zone.addEventListener("click", () => {
+      pickerFromHero = scrollToStudio;
+      openPicker();
+    });
     zone.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        pickerFromHero = scrollToStudio;
         openPicker();
       }
     });
@@ -151,43 +209,29 @@
     zone.addEventListener("drop", (e) => {
       e.preventDefault();
       zone.classList.remove("is-dragover");
-      const file = e.dataTransfer.files && e.dataTransfer.files[0];
-      if (file) {
-        handleFile(file);
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        addFiles(e.dataTransfer.files);
         if (scrollToStudio) scrollToStudioSection();
       }
     });
   }
 
   let pickerFromHero = false;
-  els.heroDropzone.addEventListener("click", () => (pickerFromHero = true));
-  els.stageDropzone.addEventListener("click", () => (pickerFromHero = false));
   els.replacePhoto.addEventListener("click", () => {
     pickerFromHero = false;
     openPicker();
   });
 
   els.input.addEventListener("change", () => {
-    const file = els.input.files && els.input.files[0];
-    if (file) {
-      handleFile(file);
+    if (els.input.files && els.input.files.length) {
+      addFiles(els.input.files);
       if (pickerFromHero) scrollToStudioSection();
     }
-    els.input.value = ""; // allow re-choosing the same file
+    els.input.value = ""; // allow re-choosing the same files
   });
 
   function scrollToStudioSection() {
     document.getElementById("studio").scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function showPhoto(src, aspect) {
-    state.aspect = aspect;
-    els.img.src = src;
-    els.figure.hidden = false;
-    els.stageDropzone.hidden = true;
-    els.photoActions.hidden = false;
-    els.sampleTag.hidden = !state.isSample;
-    render();
   }
 
   function readAspect(src) {
@@ -199,78 +243,121 @@
     });
   }
 
-  async function handleFile(file) {
-    if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
-    state.file = file;
-    state.isSample = false;
-    state.imageKey = null;
-    state.uploadError = null;
-    state.objectUrl = URL.createObjectURL(file);
+  function newDesign(fields) {
+    state.photoCounter += 1;
+    const base = state.designs.length ? defaultSettings() : { ...state.draft, texts: state.draft.texts.map((t) => ({ ...t })) };
+    return {
+      id: `d${Date.now().toString(36)}${state.photoCounter}`,
+      name: `Photo ${state.photoCounter}`,
+      file: null,
+      objectUrl: null,
+      src: null,
+      aspect: null,
+      isSample: false,
+      uploadPromise: null,
+      imageKey: null,
+      uploadError: null,
+      ...base,
+      ...fields,
+    };
+  }
 
-    // Preview straight away (the browser applies EXIF rotation to <img> the
-    // same way the server bakes it in), while the upload runs in the background.
-    readAspect(state.objectUrl).then(
-      (aspect) => showPhoto(state.objectUrl, aspect),
-      () => {}
-    );
+  /** Adds photos to the tray, up to the order limits, and starts their uploads. */
+  function addFiles(fileList) {
+    hideTrayMessage();
+    // A real photo replaces the sample.
+    state.designs.filter((d) => d.isSample).forEach(removeDesign);
 
-    if (file.size > SITE.maxUploadMb * 1024 * 1024) {
-      state.uploadPromise = Promise.reject(
-        new Error(`That file is too large. The maximum is ${SITE.maxUploadMb} MB.`)
+    const files = Array.from(fileList);
+    let added = 0;
+    let skippedForPhotos = 0;
+    let skippedForQuantity = 0;
+    for (const file of files) {
+      if (photoSlotsLeft() <= 0) {
+        skippedForPhotos += 1;
+        continue;
+      }
+      if (cartTotals().quantity + trayQuantity() + 1 > SITE.maxOrderQuantity) {
+        skippedForQuantity += 1;
+        continue;
+      }
+      const design = newDesign({ file, objectUrl: URL.createObjectURL(file) });
+      design.src = design.objectUrl;
+      // The first photo of a batch keeps the draft's quantity; later ones start at 1,
+      // trimmed if needed so the order stays within the total.
+      design.quantity = clamp(design.quantity, 1, Math.max(1, SITE.maxOrderQuantity - cartTotals().quantity - trayQuantity()));
+      state.designs.push(design);
+      if (added === 0) state.activeId = design.id;
+      added += 1;
+      startUpload(design);
+      readAspect(design.objectUrl).then(
+        (aspect) => {
+          design.aspect = aspect;
+          renderAll();
+        },
+        () => {}
       );
-    } else {
-      setPhotoStatus(`Uploading ${file.name}…`);
-      state.uploadPromise = uploadImage(file);
     }
 
-    const thisUpload = state.uploadPromise;
-    thisUpload.then(
-      (imageKey) => {
-        if (state.uploadPromise !== thisUpload) return; // a newer photo was chosen
-        state.imageKey = imageKey;
-        setPhotoStatus(`✓ ${file.name} uploaded`);
-        render();
-      },
-      (err) => {
-        if (state.uploadPromise !== thisUpload) return;
-        state.uploadError = err.message;
-        setPhotoStatus(err.message, true);
-        render();
-      }
-    );
-    render();
+    const notes = [];
+    if (skippedForPhotos) {
+      notes.push(
+        `Only ${SITE.maxUniqueImages} different photos per order (counting your cart) — ${plural(skippedForPhotos, "photo")} weren't added.`
+      );
+    }
+    if (skippedForQuantity) {
+      notes.push(`An order can have at most ${SITE.maxOrderQuantity} cutouts — ${plural(skippedForQuantity, "photo")} weren't added.`);
+    }
+    if (notes.length) showTrayMessage(notes.join(" "));
+    renderAll();
   }
 
-  async function uploadImage(file) {
+  function startUpload(design) {
+    if (design.file.size > SITE.maxUploadMb * 1024 * 1024) {
+      design.uploadError = `That file is too large. The maximum is ${SITE.maxUploadMb} MB.`;
+      return;
+    }
+    const formData = new FormData();
+    formData.append("image", design.file);
     // The backend checks type, size and resolution, fixes phone rotation,
     // and returns the key the order refers to the photo by.
-    const formData = new FormData();
-    formData.append("image", file);
-    const result = await Api.upload("/uploads", formData);
-    return result.imageKey;
+    design.uploadPromise = Api.upload("/uploads", formData).then(
+      (result) => {
+        design.imageKey = result.imageKey;
+        renderAll();
+      },
+      (err) => {
+        design.uploadError = err.message;
+        renderAll();
+      }
+    );
   }
 
-  function setPhotoStatus(message, isError) {
-    els.photoStatus.textContent = message;
-    els.photoStatus.style.color = isError ? "var(--error)" : "";
-    els.photoActions.hidden = false;
+  function removeDesign(design) {
+    if (design.objectUrl) URL.revokeObjectURL(design.objectUrl);
+    const index = state.designs.indexOf(design);
+    state.designs.splice(index, 1);
+    if (state.activeId === design.id) {
+      const next = state.designs[index] || state.designs[index - 1];
+      state.activeId = next ? next.id : null;
+    }
   }
 
   async function loadSample() {
-    if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
-    state.objectUrl = null;
-    state.file = null;
-    state.isSample = true;
-    state.imageKey = null;
-    state.uploadError = null;
-    state.uploadPromise = null;
-    const src = "img/sample.svg";
-    try {
-      showPhoto(src, await readAspect(src));
-    } catch (e) {
-      showPhoto(src, 0.4);
+    if (realDesigns().length) {
+      scrollToStudioSection();
+      return;
     }
-    setPhotoStatus("Showing a sample photo");
+    state.designs.filter((d) => d.isSample).forEach(removeDesign);
+    const design = newDesign({ isSample: true, src: "img/sample.svg", name: "Sample" });
+    try {
+      design.aspect = await readAspect(design.src);
+    } catch (e) {
+      design.aspect = 0.4;
+    }
+    state.designs.push(design);
+    state.activeId = design.id;
+    renderAll();
     scrollToStudioSection();
   }
 
@@ -278,42 +365,140 @@
   wireDropzone(els.heroDropzone, { scrollToStudio: true });
   wireDropzone(els.stageDropzone, { scrollToStudio: false });
 
-  // ---------- Size controls ----------
+  function showTrayMessage(message) {
+    els.trayMessage.textContent = message;
+    els.trayMessage.classList.add("visible");
+  }
+
+  function hideTrayMessage() {
+    els.trayMessage.classList.remove("visible");
+  }
+
+  // ---------- Tray ----------
+  function designStatus(d) {
+    if (d.isSample) return "Sample — preview only";
+    if (d.uploadError) return d.uploadError;
+    if (!d.imageKey) return "Uploading…";
+    return widthProblem(d) ? "Check the size" : "✓ Uploaded";
+  }
+
+  function renderTray() {
+    const show = state.designs.length > 0;
+    els.tray.hidden = !show;
+    if (!show) {
+      els.trayList.innerHTML = "";
+      return;
+    }
+
+    const real = realDesigns();
+    const qty = trayQuantity();
+    els.traySummary.textContent = real.length
+      ? `${plural(real.length, "photo")} · ${plural(qty, "cutout")}`
+      : "Sample photo";
+
+    const cards = state.designs
+      .map((d) => {
+        const status = designStatus(d);
+        const hasError = Boolean(d.uploadError || (!d.isSample && widthProblem(d)));
+        return `
+        <div class="tray-card${d.id === state.activeId ? " is-active" : ""}${hasError ? " has-error" : ""}" data-id="${d.id}" role="listitem">
+          <button type="button" class="tray-card__select" aria-pressed="${d.id === state.activeId}" aria-label="Edit ${escapeHtml(d.name)}">
+            <img class="tray-card__thumb" src="${escapeHtml(d.src)}" alt="" />
+            <span class="tray-card__name">${escapeHtml(d.name)}</span>
+            <span class="tray-card__status">${escapeHtml(status)}</span>
+          </button>
+          ${
+            d.isSample
+              ? ""
+              : `<label class="tray-card__qty">Qty
+                  <select data-qty aria-label="Quantity for ${escapeHtml(d.name)}">${quantityOptions(d.quantity, maxQuantityFor(d))}</select>
+                </label>`
+          }
+          <button type="button" class="icon-btn tray-card__remove" data-remove aria-label="Remove ${escapeHtml(d.name)}">
+            <svg class="icon"><use href="#i-x"/></svg>
+          </button>
+        </div>`;
+      })
+      .join("");
+
+    const addTile =
+      photoSlotsLeft() > 0
+        ? `<button type="button" class="tray-add" data-add-photos>
+             <svg class="icon"><use href="#i-plus"/></svg>Add photos
+             <span class="hint">${plural(photoSlotsLeft(), "more photo")} allowed</span>
+           </button>`
+        : "";
+    els.trayList.innerHTML = cards + addTile;
+  }
+
+  els.trayList.addEventListener("click", (e) => {
+    if (e.target.closest("[data-add-photos]")) {
+      pickerFromHero = false;
+      openPicker();
+      return;
+    }
+    const card = e.target.closest(".tray-card");
+    if (!card) return;
+    const design = state.designs.find((d) => d.id === card.dataset.id);
+    if (!design) return;
+    if (e.target.closest("[data-remove]")) {
+      removeDesign(design);
+      hideTrayMessage();
+      renderAll();
+    } else if (e.target.closest(".tray-card__select")) {
+      state.activeId = design.id;
+      renderTextList();
+      renderMaterials();
+      renderAll();
+    }
+  });
+
+  els.trayList.addEventListener("change", (e) => {
+    if (!e.target.matches("[data-qty]")) return;
+    const design = state.designs.find((d) => d.id === e.target.closest(".tray-card").dataset.id);
+    if (design) setQuantity(design, Number(e.target.value));
+  });
+
+  // ---------- Size controls (edit the active design) ----------
   function setHeight(inches) {
-    state.heightIn = clamp(Math.round(inches), SITE.heightMinIn, SITE.heightMaxIn);
+    active().heightIn = clamp(Math.round(inches), SITE.heightMinIn, SITE.heightMaxIn);
     render();
   }
 
   els.heightRange.addEventListener("input", () => setHeight(Number(els.heightRange.value)));
+  els.heightRange.addEventListener("change", renderTray);
   [els.heightFt, els.heightInches].forEach((input) =>
     input.addEventListener("change", () => {
       const ft = Number(els.heightFt.value) || 0;
       const inch = clamp(Number(els.heightInches.value) || 0, 0, 11);
       setHeight(ft * 12 + inch);
+      renderTray();
     })
   );
 
   els.lockToggle.addEventListener("change", () => {
+    const d = active();
     if (!els.lockToggle.checked) {
-      state.manualWidthIn = clamp(Math.round(currentWidthIn() || 24), SITE.widthMinIn, SITE.widthMaxIn);
+      d.manualWidthIn = clamp(Math.round(widthOf(d) || 24), SITE.widthMinIn, SITE.widthMaxIn);
     }
-    state.lockProportions = els.lockToggle.checked;
-    render();
+    d.lockProportions = els.lockToggle.checked;
+    renderAll();
   });
 
   [els.widthFt, els.widthInches].forEach((input) =>
     input.addEventListener("change", () => {
       const ft = Number(els.widthFt.value) || 0;
       const inch = clamp(Number(els.widthInches.value) || 0, 0, 11);
-      state.manualWidthIn = clamp(ft * 12 + inch, SITE.widthMinIn, SITE.widthMaxIn);
-      render();
+      active().manualWidthIn = clamp(ft * 12 + inch, SITE.widthMinIn, SITE.widthMaxIn);
+      renderAll();
     })
   );
 
-  // ---------- Text elements ----------
+  // ---------- Text elements (active design) ----------
   els.addText.addEventListener("click", () => {
-    if (state.texts.length >= SITE.maxTextElements) return;
-    state.texts.push({ style: "bubble", text: "" });
+    const d = active();
+    if (d.texts.length >= SITE.maxTextElements) return;
+    d.texts.push({ style: "bubble", text: "" });
     renderTextList();
     render();
     const inputs = els.textList.querySelectorAll("input");
@@ -321,11 +506,12 @@
   });
 
   function renderTextList() {
+    const texts = active().texts;
     const styleOptions = (selected) =>
       Object.entries(SITE.textStyles)
         .map(([value, label]) => `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`)
         .join("");
-    els.textList.innerHTML = state.texts
+    els.textList.innerHTML = texts
       .map(
         (t, i) => `
       <div class="text-item" data-index="${i}">
@@ -335,32 +521,32 @@
       </div>`
       )
       .join("");
-    els.addText.disabled = state.texts.length >= SITE.maxTextElements;
+    els.addText.disabled = texts.length >= SITE.maxTextElements;
   }
 
   els.textList.addEventListener("input", (e) => {
     const row = e.target.closest(".text-item");
     if (!row) return;
-    const t = state.texts[Number(row.dataset.index)];
-    t[e.target.dataset.field] = e.target.value;
+    active().texts[Number(row.dataset.index)][e.target.dataset.field] = e.target.value;
     renderStageTexts();
   });
 
   els.textList.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-remove]");
     if (!btn) return;
-    state.texts.splice(Number(btn.closest(".text-item").dataset.index), 1);
+    active().texts.splice(Number(btn.closest(".text-item").dataset.index), 1);
     renderTextList();
     render();
   });
 
-  // ---------- Material ----------
+  // ---------- Material (active design) ----------
   function renderMaterials() {
+    const current = active().material;
     els.materialOptions.innerHTML = SITE.materials
       .map(
         (m) => `
       <label class="option-card${m.comingSoon ? " is-disabled" : ""}">
-        <input type="radio" name="material" value="${m.id}"${m.id === state.material ? " checked" : ""}${m.comingSoon ? " disabled" : ""} />
+        <input type="radio" name="material" value="${m.id}"${m.id === current ? " checked" : ""}${m.comingSoon ? " disabled" : ""} />
         <span class="option-card__check"><svg class="icon"><use href="#i-check"/></svg></span>
         <span class="option-card__body">
           <span class="option-card__title">${escapeHtml(m.name)}</span>
@@ -374,19 +560,18 @@
 
   els.materialOptions.addEventListener("change", (e) => {
     if (e.target.name === "material") {
-      state.material = e.target.value;
+      active().material = e.target.value;
       render();
     }
   });
 
-  // ---------- Quantity ----------
-  function setQuantity(n) {
-    state.quantity = clamp(Math.round(n) || 1, 1, 99);
-    render();
+  // ---------- Quantity (dropdowns) ----------
+  function setQuantity(design, n) {
+    design.quantity = clamp(Math.round(n) || 1, 1, maxQuantityFor(design));
+    renderAll();
   }
-  els.qtyMinus.addEventListener("click", () => setQuantity(state.quantity - 1));
-  els.qtyPlus.addEventListener("click", () => setQuantity(state.quantity + 1));
-  els.qty.addEventListener("change", () => setQuantity(Number(els.qty.value)));
+
+  els.qty.addEventListener("change", () => setQuantity(active(), Number(els.qty.value)));
 
   // ---------- Preview tools ----------
   document.querySelectorAll("[data-reference]").forEach((btn) =>
@@ -414,21 +599,19 @@
   });
   if (!els.stage.requestFullscreen) els.fullscreenToggle.hidden = true;
 
-  // ---------- Stage layout (to scale) ----------
+  // ---------- Stage layout (to scale, active design) ----------
   function layoutStage() {
     const wallPx = els.wall.clientHeight;
     if (!wallPx) return;
     const ppi = wallPx / SITE.wallHeightIn;
     els.stage.style.setProperty("--ppi", ppi + "px");
 
-    // Ruler: one tick per foot, 1–8 ft.
     let ticks = "";
     for (let ft = 1; ft <= 8; ft++) {
       ticks += `<span class="stage__tick" style="bottom:${ft * 12 * ppi}px">${ft}'</span>`;
     }
     els.ruler.innerHTML = ticks;
 
-    // Reference figure.
     const ref = SITE.references[state.reference];
     els.ref.hidden = !ref;
     if (ref) {
@@ -438,54 +621,104 @@
       els.refLabel.textContent = ref.label;
     }
 
-    // The standee itself.
-    const widthIn = currentWidthIn();
-    if (state.aspect && widthIn) {
-      els.figure.style.height = state.heightIn * ppi + "px";
+    const d = active();
+    const widthIn = widthOf(d);
+    if (d.src && d.aspect && widthIn) {
+      els.figure.style.height = d.heightIn * ppi + "px";
       els.figure.style.width = widthIn * ppi + "px";
     }
   }
 
+  function renderStage() {
+    const d = active();
+    const hasPhoto = Boolean(d.src);
+    els.figure.hidden = !hasPhoto;
+    els.stageDropzone.hidden = hasPhoto;
+    els.sampleTag.hidden = !d.isSample;
+    if (hasPhoto && els.img.getAttribute("src") !== d.src) els.img.src = d.src;
+    els.photoActions.hidden = !state.designs.length;
+    els.photoStatus.textContent = state.designs.length ? `${d.name}: ${designStatus(d)}` : "";
+    els.photoStatus.style.color = d.uploadError ? "var(--error)" : "";
+    els.replacePhoto.hidden = photoSlotsLeft() <= 0;
+    layoutStage();
+    renderStageTexts();
+  }
+
   function renderStageTexts() {
-    els.texts.innerHTML = state.texts
-      .filter((t) => t.text.trim())
+    els.texts.innerHTML = active()
+      .texts.filter((t) => t.text.trim())
       .map((t) => `<div class="stage-text stage-text--${t.style}">${escapeHtml(t.text.trim())}</div>`)
       .join("");
   }
 
   new ResizeObserver(layoutStage).observe(els.wall);
 
-  // ---------- Price ----------
-  function renderPrice() {
-    const sizeTier = Pricing.sizeTierForHeight(state.heightIn);
-    if (!state.pricingConfig) return;
+  // ---------- Price (every design in the tray) ----------
+  /** The designs the price card covers: real photos, or the one being previewed/drafted. */
+  function pricedDesigns() {
+    const real = realDesigns();
+    return real.length ? real : [active()];
+  }
 
+  function priceDesign(d) {
+    const sizeTier = Pricing.sizeTierForHeight(d.heightIn);
     const price = Pricing.calculatePrice({
       sizeTier,
-      material: state.material,
-      quantity: state.quantity,
+      material: d.material,
+      quantity: d.quantity,
       rates: state.pricingConfig.rates,
       discountTiers: state.pricingConfig.discountTiers,
     });
-    if (!price) {
+    return { sizeTier, price };
+  }
+
+  function renderPrice() {
+    if (!state.pricingConfig) return;
+    const designs = pricedDesigns();
+    const priced = designs.map((d) => ({ d, ...priceDesign(d) }));
+    if (priced.some((p) => !p.price)) {
       els.priceTotal.textContent = "—";
       els.priceLines.innerHTML = "";
       return;
     }
 
-    els.priceTotal.textContent = formatCurrency(price.total);
-    const lines = [
-      [`Base · ${SITE.tierLabels[sizeTier]}`, formatCurrency(price.baseRate) + (state.quantity > 1 ? ` × ${state.quantity}` : "")],
-    ];
-    if (price.discountAmount > 0) {
-      lines.push([`Bulk discount (${price.discountPct}%)`, "−" + formatCurrency(price.discountAmount), "is-discount"]);
+    const cutouts = designs.reduce((n, d) => n + d.quantity, 0);
+    const total = priced.reduce((n, p) => n + p.price.total, 0);
+    els.priceTotal.textContent = formatCurrency(total);
+    els.priceLabel.textContent =
+      designs.length > 1 ? `Your standees · ${plural(designs.length, "design")} · ${plural(cutouts, "cutout")}` : "Your standee";
+
+    let lines;
+    if (designs.length > 1) {
+      lines = priced.map(({ d, sizeTier, price }) => [
+        `${d.name} · ${SITE.tierLabels[sizeTier]} × ${d.quantity}${price.discountPct ? ` (${price.discountPct}% off)` : ""}`,
+        formatCurrency(price.total),
+      ]);
+    } else {
+      const { d, sizeTier, price } = priced[0];
+      lines = [[`Base · ${SITE.tierLabels[sizeTier]}`, formatCurrency(price.baseRate) + (d.quantity > 1 ? ` × ${d.quantity}` : "")]];
+      if (price.discountAmount > 0) {
+        lines.push([`Bulk discount (${price.discountPct}%)`, "−" + formatCurrency(price.discountAmount), "is-discount"]);
+      }
     }
     els.priceLines.innerHTML = lines
       .map(([dt, dd, cls]) => `<div class="${cls || ""}"><dt>${escapeHtml(dt)}</dt><dd>${escapeHtml(dd)}</dd></div>`)
       .join("");
 
-    if (price.discountPct > 0) {
-      els.discountTag.textContent = `${price.discountPct}% bulk discount`;
+    // Quantity dropdown for the design being edited.
+    const d = active();
+    els.qtyLabel.textContent = state.designs.length > 1 ? `Quantity · ${d.name}` : "Quantity";
+    // Up to 500 options: only rebuild when the value or the ceiling changes
+    // (render() runs on every slider movement).
+    const qtyKey = `${d.quantity}/${maxQuantityFor(d)}`;
+    if (els.qty.dataset.key !== qtyKey) {
+      els.qty.innerHTML = quantityOptions(d.quantity, maxQuantityFor(d));
+      els.qty.dataset.key = qtyKey;
+    }
+    els.qty.disabled = Boolean(d.isSample);
+    const own = priceDesign(d).price;
+    if (own && own.discountPct > 0) {
+      els.discountTag.textContent = `${own.discountPct}% bulk discount`;
       els.discountTag.hidden = false;
     } else {
       els.discountTag.hidden = true;
@@ -496,10 +729,9 @@
     const earliest = addBusinessDays(today, SITE.productionDays + SITE.transitDaysMin);
     const latest = addBusinessDays(today, SITE.productionDays + SITE.transitDaysMax);
     els.deliveryTitle.textContent = `Arrives ${formatDay(earliest)} – ${formatDay(latest)}`;
-    const shipping = Pricing.calculateShipping({
+    const shipping = Pricing.calculateOrderShipping({
       country: SITE.defaultCountry,
-      sizeTier,
-      quantity: state.quantity,
+      items: priced.map((p) => ({ sizeTier: p.sizeTier, quantity: p.d.quantity })),
       shippingRates: state.pricingConfig.shippingRates,
     });
     const country = SITE.countryLabels[SITE.defaultCountry];
@@ -510,80 +742,107 @@
 
   // ---------- Add to cart ----------
   function cartBlocker() {
-    if (state.isSample) return "Upload your own photo to order.";
-    if (!state.file) return "Upload a photo to get started.";
-    if (state.uploadError) return state.uploadError;
-    if (!state.imageKey) return "Uploading your photo…";
-    if (!state.pricingConfig) return "Loading prices…";
-    return widthProblem();
-  }
-
-  function renderCartButton() {
-    const blocker = cartBlocker();
-    els.addToCart.disabled = Boolean(blocker);
-    if (blocker || !justAdded) {
-      els.priceNote.classList.remove("is-success");
-      els.priceNote.textContent = blocker || "Ready when you are.";
+    const real = realDesigns();
+    if (!real.length) {
+      return state.designs.some((d) => d.isSample) ? "Upload your own photos to order." : "Upload a photo to get started.";
     }
+    const failed = real.find((d) => d.uploadError);
+    if (failed) return `${failed.name}: ${failed.uploadError} Remove it to continue.`;
+    const uploading = real.filter((d) => !d.imageKey).length;
+    if (uploading) return `Uploading ${plural(uploading, "photo")}…`;
+    if (!state.pricingConfig) return "Loading prices…";
+    const badSize = real.find((d) => widthProblem(d));
+    if (badSize) return `${badSize.name}: ${widthProblem(badSize)}`;
+    const cart = cartTotals();
+    if (cart.quantity + trayQuantity() > SITE.maxOrderQuantity) {
+      return `An order can have at most ${SITE.maxOrderQuantity} cutouts (you'd have ${cart.quantity + trayQuantity()}, counting your cart).`;
+    }
+    if (cart.uniqueImages + real.length > SITE.maxUniqueImages) {
+      return `An order can have at most ${SITE.maxUniqueImages} different photos (counting your cart).`;
+    }
+    return null;
   }
 
   let justAdded = false;
+
+  function renderCartButton() {
+    const blocker = cartBlocker();
+    const n = realDesigns().length;
+    els.addToCartLabel.textContent = n > 1 ? `Add ${n} designs to cart` : "Add to cart";
+    els.addToCart.disabled = Boolean(blocker);
+    if (justAdded && !n) return; // keep the "added" confirmation until something changes
+    justAdded = false;
+    els.priceNote.classList.remove("is-success");
+    els.priceNote.textContent = blocker || "Ready when you are.";
+  }
+
   els.addToCart.addEventListener("click", async () => {
     if (cartBlocker()) return;
     els.addToCart.disabled = true;
-    const thumbnail = await Cart.makeThumbnail(state.objectUrl);
-    Cart.add({
-      imageKey: state.imageKey,
-      thumbnail,
-      heightIn: state.heightIn,
-      widthIn: currentWidthIn(),
-      material: state.material,
-      quantity: state.quantity,
-      textElements: state.texts
-        .filter((t) => t.text.trim())
-        .map((t) => ({ style: t.style, text: t.text.trim() })),
-    });
+    const designs = realDesigns();
+    const items = await Promise.all(
+      designs.map(async (d) => ({
+        imageKey: d.imageKey,
+        thumbnail: await Cart.makeThumbnail(d.objectUrl),
+        heightIn: d.heightIn,
+        widthIn: widthOf(d),
+        material: d.material,
+        quantity: d.quantity,
+        textElements: d.texts.filter((t) => t.text.trim()).map((t) => ({ style: t.style, text: t.text.trim() })),
+      }))
+    );
+    Cart.addMany(items);
+    // The tray is done; its settings carry over as the starting point for the next photos.
+    const last = active();
+    state.draft = { ...defaultSettings(), heightIn: last.heightIn, material: last.material };
+    designs.forEach(removeDesign);
+    state.activeId = null;
+    renderTextList();
+    renderMaterials();
+    renderAll();
     justAdded = true;
     els.priceNote.classList.add("is-success");
-    els.priceNote.innerHTML = 'Added to your cart. <a href="checkout.html">Go to checkout →</a>';
-    els.addToCart.disabled = false;
+    els.priceNote.innerHTML = `${plural(items.length, "design")} added to your cart. <a href="checkout.html">Go to checkout →</a>`;
   });
 
   // ---------- Render ----------
+  /** Everything that depends on the active design's size (cheap; runs on slider input). */
   function render() {
-    justAdded = false;
-    // Size readouts and inputs.
-    els.heightReadout.textContent = formatFeetInches(state.heightIn);
-    els.heightRange.value = state.heightIn;
-    els.heightFt.value = Math.floor(state.heightIn / 12);
-    els.heightInches.value = state.heightIn % 12;
-    const fill = ((state.heightIn - SITE.heightMinIn) / (SITE.heightMaxIn - SITE.heightMinIn)) * 100;
+    const d = active();
+    els.heightReadout.textContent = formatFeetInches(d.heightIn);
+    els.heightRange.value = d.heightIn;
+    els.heightFt.value = Math.floor(d.heightIn / 12);
+    els.heightInches.value = d.heightIn % 12;
+    const fill = ((d.heightIn - SITE.heightMinIn) / (SITE.heightMaxIn - SITE.heightMinIn)) * 100;
     els.heightRange.style.setProperty("--fill", fill + "%");
 
-    const widthIn = currentWidthIn();
+    const widthIn = widthOf(d);
     els.widthReadout.textContent = widthIn ? formatFeetInches(widthIn) : "—";
-    els.widthInputs.hidden = state.lockProportions;
-    if (!state.lockProportions) {
-      els.widthFt.value = Math.floor(state.manualWidthIn / 12);
-      els.widthInches.value = Math.round(state.manualWidthIn % 12);
+    els.lockToggle.checked = d.lockProportions;
+    els.widthInputs.hidden = d.lockProportions;
+    if (!d.lockProportions) {
+      els.widthFt.value = Math.floor(d.manualWidthIn / 12);
+      els.widthInches.value = Math.round(d.manualWidthIn % 12);
     }
-    const problem = widthProblem();
+    const problem = widthProblem(d);
     els.widthHint.textContent =
       problem ||
-      (state.lockProportions
-        ? state.aspect
+      (d.lockProportions
+        ? d.aspect
           ? "Width auto-calculated from your photo's proportions."
           : "Width is calculated from your photo's proportions once you add one."
         : "Proportions unlocked — the photo will be stretched to this width.");
     els.widthHint.style.color = problem ? "var(--error)" : "";
 
-    els.qty.value = state.quantity;
-    els.qtyMinus.disabled = state.quantity <= 1;
-
-    layoutStage();
-    renderStageTexts();
+    renderStage();
     renderPrice();
     renderCartButton();
+  }
+
+  /** Full refresh, including the tray (photos added/removed, uploads finished, quantities). */
+  function renderAll() {
+    renderTray();
+    render();
   }
 
   // ---------- Init ----------
@@ -595,13 +854,18 @@
     document.querySelectorAll("[data-site-from-price]").forEach((el) => {
       el.textContent = `FROM $${SITE.fromPrice}`;
     });
+    document.querySelectorAll("[data-max-images]").forEach((el) => (el.textContent = SITE.maxUniqueImages));
+    document.querySelectorAll("[data-max-qty]").forEach((el) => (el.textContent = SITE.maxOrderQuantity));
   }
+
+  // Cart changes in another tab change how much room is left.
+  window.addEventListener("storage", renderAll);
 
   async function init() {
     fillSiteCopy();
     renderMaterials();
     renderTextList();
-    render();
+    renderAll();
     try {
       state.pricingConfig = await Api.get("/pricing-config");
     } catch (err) {
@@ -609,7 +873,7 @@
       els.deliverySub.textContent = "Shipping unavailable right now.";
       return;
     }
-    render();
+    renderAll();
   }
 
   init();

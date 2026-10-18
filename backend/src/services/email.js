@@ -70,7 +70,7 @@ function formatOrderDetails(order, { downloadLinks = false } = {}) {
     `Shipping to: ${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}, ${addr.city}, ${addr.region} ${addr.postalCode}, ${addr.country}\n` +
     `Shipping: $${order.shippingAmount.toFixed(2)} ${order.currency}\n` +
     `Total: $${order.totalPrice.toFixed(2)} ${order.currency}\n\n` +
-    `Items:\n${itemLines}`
+    `Items (${order.items.reduce((n, i) => n + i.quantity, 0)} cutouts, ${order.items.length} design${order.items.length === 1 ? "" : "s"}):\n${itemLines}`
   );
 }
 

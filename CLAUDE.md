@@ -52,6 +52,9 @@ who produces and ships the product directly to the customer.
 - **All prices and charges are CAD** (`CURRENCY` in
   `backend/src/services/pricing.js`). **All sales are final** (custom-made;
   free reprint if damaged), and checkout requires accepting that.
+- **Order limits:** up to 500 cutouts and 10 different photos per order,
+  enforced in the studio, checkout and server. Bulk discount is per design;
+  shipping is priced per order (one first-unit charge).
 - **Pricing is config-driven, not hardcoded**: size tier × material
   multiplier, with a quantity-discount curve. Both live in the database so
   they can change without a redeploy.

@@ -64,9 +64,9 @@
 
         <div class="dropzone" id="hero-dropzone" role="button" tabindex="0" aria-describedby="hero-dropzone-sub">
           <span class="icon-badge icon-badge--round"><svg class="icon"><use href="#i-image-up"/></svg></span>
-          <span class="dropzone__title">Drag &amp; drop your photo</span>
+          <span class="dropzone__title">Drag &amp; drop your photos</span>
           <span class="dropzone__sub" id="hero-dropzone-sub">
-            or <span class="link-accent">browse files</span> · PNG, JPG, WEBP up to 25 MB
+            or <span class="link-accent">browse files</span> · PNG, JPG, WEBP up to 25 MB · up to 10 photos
           </span>
         </div>
         <button type="button" class="sample-link" data-try-sample>
@@ -104,7 +104,17 @@
           <h2>Design your standee, see it to scale.</h2>
         </div>
 
-        <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+        <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
+
+        <!-- One card per uploaded photo: pick which one to edit, and how many of each. -->
+        <div class="photo-tray" id="photo-tray" hidden>
+          <div class="photo-tray__head">
+            <strong id="tray-summary"></strong>
+            <span class="hint">Up to <span data-max-images>10</span> photos and <span data-max-qty>500</span> cutouts per order</span>
+          </div>
+          <div class="photo-tray__list" id="tray-list" role="list"></div>
+        </div>
+        <div class="status-message error" id="tray-message" role="status"></div>
 
         <div class="studio">
           <!-- Left: to-scale preview -->
@@ -167,7 +177,7 @@
             <p class="stage-caption">Preview shown to scale against a 9 ft wall.</p>
             <p class="stage-caption" id="photo-actions" hidden>
               <span id="photo-status"></span>
-              · <button type="button" class="link-accent" id="replace-photo">Replace photo</button>
+              · <button type="button" class="link-accent" id="replace-photo">Add more photos</button>
             </p>
           </div>
 
@@ -254,11 +264,10 @@
               </div>
 
               <div class="qty-row">
-                <div class="stepper" aria-label="Quantity">
-                  <button type="button" id="qty-minus" aria-label="Fewer"><svg class="icon"><use href="#i-minus"/></svg></button>
-                  <input id="qty" type="number" min="1" max="99" step="1" value="1" aria-label="Quantity" />
-                  <button type="button" id="qty-plus" aria-label="More"><svg class="icon"><use href="#i-plus"/></svg></button>
-                </div>
+                <label class="qty-select">
+                  <span id="qty-label">Quantity</span>
+                  <select id="qty" aria-describedby="qty-label"></select>
+                </label>
                 <span class="discount-tag" id="discount-tag" hidden></span>
               </div>
 
@@ -271,7 +280,7 @@
               </div>
 
               <button type="button" class="btn btn-primary btn-lg btn-block" id="add-to-cart" disabled>
-                <svg class="icon"><use href="#i-bag"/></svg>Add to cart
+                <svg class="icon"><use href="#i-bag"/></svg><span id="add-to-cart-label">Add to cart</span>
               </button>
               <p class="price-card__note" id="price-note" aria-live="polite">Upload a photo to get started.</p>
               <p class="price-card__fineprint">

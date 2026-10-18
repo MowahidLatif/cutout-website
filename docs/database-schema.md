@@ -31,7 +31,7 @@ blocks).
 | status | text (enum) | `pending_payment`, `paid`, `in_production`, `shipped`, `delivered`, `cancelled` |
 | subtotal | numeric(10,2) | product only, before the quantity discount; excludes shipping |
 | discount_amount | numeric(10,2) | quantity discount; product only, never applied to shipping |
-| shipping_amount | numeric(10,2) | sum of each item's shipping (see `shipping_rates`) |
+| shipping_amount | numeric(10,2) | shipping for the whole order: one first-unit charge, then each cutout's additional rate (see `shipping_rates`) |
 | total_price | numeric(10,2) | what's charged: `subtotal - discount_amount + shipping_amount` |
 | currency | text | `CAD` (all prices and charges); default `CAD` |
 | final_sale_accepted_at | timestamptz | when the customer ticked the final-sale (no returns) box at checkout; null for orders from before `006` |
@@ -103,8 +103,15 @@ Seeded values (adjust once real costs/margins are known):
 | additional_unit_rate | numeric(10,2) | shipping for each further unit of the same item |
 | updated_at | timestamptz | |
 
-Unique on `(country, size_tier)`. Shipping for one item line is
-`first_unit_rate + additional_unit_rate * (quantity - 1)`.
+Unique on `(country, size_tier)`. Shipping is priced for the **whole order**:
+the first-unit rate is charged once, for the "lead" item (the size with the
+highest `first_unit_rate`; ties go to the bigger first-minus-additional
+premium), and every other cutout ships at its own size's
+`additional_unit_rate`:
+
+    lead.first + lead.additional × (lead.qty − 1) + Σ others (additional × qty)
+
+A one-item order is simply `first + additional × (quantity − 1)`.
 
 Seeded values in **CAD** (entered in USD by `002`, converted by `006`). Only
 CA / life-size first unit is from a real supplier quote (US$122, UPS

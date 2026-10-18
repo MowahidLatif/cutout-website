@@ -1,5 +1,5 @@
 const pool = require("../db/pool");
-const { calculatePrice, calculateShipping, sizeTierForHeight, HEIGHT_RANGE_IN, CURRENCY } = require("./pricing");
+const { calculatePrice, calculateOrderShipping, sizeTierForHeight, HEIGHT_RANGE_IN, CURRENCY } = require("./pricing");
 const storage = require("./storage");
 
 const VALID_MATERIALS = ["cardboard", "coroplast", "foam_board", "acrylic"];
@@ -8,6 +8,10 @@ const WIDTH_RANGE_IN = { min: 6, max: 96 };
 const TEXT_STYLES = ["bubble", "placard", "caption"];
 const MAX_TEXT_ELEMENTS = 3;
 const MAX_TEXT_LENGTH = 80;
+// Per-order limits. Same values as SITE.maxOrderQuantity / SITE.maxUniqueImages
+// in frontend/js/site-config.js.
+const MAX_ORDER_QUANTITY = 500; // cutouts in total, across all items
+const MAX_UNIQUE_IMAGES = 10; // different photos
 // Version of the final-sale (no returns) policy the customer agrees to at
 // checkout — bump it whenever frontend/policies.html changes materially.
 // Same value as SITE.policyVersion in frontend/js/site-config.js.
@@ -48,8 +52,8 @@ function validateOrderInput({ customerEmail, customerPhone, shippingAddress, ite
     if (!VALID_MATERIALS.includes(item.material)) {
       throw validationError(`Invalid material: ${item.material}`);
     }
-    if (!Number.isInteger(item.quantity) || item.quantity < 1) {
-      throw validationError("Each item needs a whole-number quantity of at least 1.");
+    if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > MAX_ORDER_QUANTITY) {
+      throw validationError(`Each item needs a whole-number quantity from 1 to ${MAX_ORDER_QUANTITY}.`);
     }
     const heightIn = Number(item.heightIn);
     if (!(heightIn >= HEIGHT_RANGE_IN.min && heightIn <= HEIGHT_RANGE_IN.max)) {
@@ -69,6 +73,19 @@ function validateOrderInput({ customerEmail, customerPhone, shippingAddress, ite
     if (!storage.isValidKey(item.imageKey)) {
       throw validationError("Each item needs an imageKey from POST /api/uploads.");
     }
+  }
+
+  const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+  if (totalQuantity > MAX_ORDER_QUANTITY) {
+    throw validationError(
+      `An order can have at most ${MAX_ORDER_QUANTITY} cutouts (this one has ${totalQuantity}).`
+    );
+  }
+  const uniqueImages = new Set(items.map((item) => item.imageKey)).size;
+  if (uniqueImages > MAX_UNIQUE_IMAGES) {
+    throw validationError(
+      `An order can have at most ${MAX_UNIQUE_IMAGES} different photos (this one has ${uniqueImages}).`
+    );
   }
 }
 
@@ -103,7 +120,6 @@ async function createOrder(input) {
   const pricedItems = [];
   let subtotal = 0;
   let itemsTotal = 0;
-  let shippingAmount = 0;
 
   for (const item of items) {
     // The size tier (and so the price) follows from the height. Any
@@ -126,16 +142,15 @@ async function createOrder(input) {
     });
     subtotal += price.subtotal;
     itemsTotal += price.total;
-    shippingAmount += await calculateShipping({
-      country: shippingAddress.country,
-      sizeTier,
-      quantity: item.quantity,
-    });
   }
 
+  // Shipping is priced for the order as a whole (one first-unit charge).
+  const shippingAmount = await calculateOrderShipping({
+    country: shippingAddress.country,
+    items: pricedItems.map((item) => ({ sizeTier: item.sizeTier, quantity: item.quantity })),
+  });
   subtotal = round2(subtotal);
   itemsTotal = round2(itemsTotal);
-  shippingAmount = round2(shippingAmount);
   // The discount is product-only; shipping is added on top.
   const discountAmount = round2(subtotal - itemsTotal);
   const total = round2(itemsTotal + shippingAmount);

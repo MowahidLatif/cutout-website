@@ -37,7 +37,8 @@ backend/
     │                             PATCH /admin/orders/:id/status
     ├── services/
     │   ├── pricing.js          — sizeTierForHeight, getPricingConfig,
-    │   │                         calculatePrice, calculateShipping
+    │   │                         calculatePrice, shippingForItems,
+    │   │                         calculateOrderShipping
     │   │                         (authoritative; mirrored in
     │   │                         frontend/js/pricing.js)
     │   ├── orders.js           — createOrder, getOrderById, setStripeSession,
@@ -83,7 +84,8 @@ POST /api/orders
                                 textElements, imageKey format)
           storage.fileExists   (each imageKey must really be stored)
           per item: tier = pricing.sizeTierForHeight(heightIn)
-                    pricing.calculatePrice + pricing.calculateShipping
+                    pricing.calculatePrice
+          once per order: pricing.calculateOrderShipping
           one transaction: INSERT orders + order_items
       → 201 with the full order (incl. server-computed totals)
 
@@ -130,7 +132,7 @@ and become 404s. They never reach Postgres as a type error (a 500).
 ## Pricing service (critical: must match the frontend's copy)
 
 `services/pricing.js` owns `sizeTierForHeight(...)`, `calculatePrice(...)`
-and `calculateShipping(...)`. These are the **authoritative** versions;
+and `calculateOrderShipping(...)` (with the pure `shippingForItems`). These are the **authoritative** versions;
 `frontend/js/pricing.js` exists only for live UI feedback. If the formula
 changes, update both, and keep both deriving from the same config data
 (`pricing_config`, `quantity_discount_tiers` and `shipping_rates`, all
@@ -147,15 +149,20 @@ Order of operations, per item:
 3. `unit_price = round2(base_rate * (1 - discount_pct / 100))`
 4. `line_total = round2(unit_price * quantity)`, and
    `subtotal = round2(base_rate * quantity)`
-5. `calculateShipping`: look up `(country, size_tier)` in
-   `shipping_rates`, then
-   `shipping = round2(first_unit_rate + additional_unit_rate * (quantity - 1))`.
+The bulk discount is per item (per design), from that item's own quantity.
+
+Then once for the whole order:
+
+5. `calculateOrderShipping({ country, items })`: one first-unit charge per
+   order, for the lead item (the size with the highest first-unit rate),
+   and every other cutout at its own size's additional rate:
+   `lead.first + lead.additional × (lead.qty − 1) + Σ others (additional × qty)`.
    The quantity discount never applies to shipping.
 
 Order totals:
 - `subtotal` = sum of the item subtotals
 - `discount_amount` = `subtotal - sum(line_total)`
-- `shipping_amount` = sum of the item shipping
+- `shipping_amount` = the order-level shipping from step 5
 - `total_price` = `sum(line_total) + shipping_amount`
 
 All are rounded to 2 decimals and stored separately for auditability.
@@ -164,6 +171,14 @@ All are rounded to 2 decimals and stored separately for auditability.
 are never read. The checkout session then charges the **stored**
 `total_price`, so the amount the customer pays is exactly what was saved
 on the order.
+
+## Order limits
+
+An order can have at most **500 cutouts** (`MAX_ORDER_QUANTITY`, the sum of
+all quantities) and **10 different photos** (`MAX_UNIQUE_IMAGES`, distinct
+`imageKey`s), enforced in `validateOrderInput` (`services/orders.js`). The
+same values are in `SITE.maxOrderQuantity` / `SITE.maxUniqueImages`, and the
+studio and checkout enforce them too.
 
 ## Currency
 

@@ -78,5 +78,10 @@
     countryLabels: { CA: "Canada", US: "the United States" },
 
     maxUploadMb: 25, // keep in step with UPLOAD_MAX_MB on the backend
+
+    // Per-order limits. Must match MAX_ORDER_QUANTITY / MAX_UNIQUE_IMAGES in
+    // backend/src/services/orders.js.
+    maxOrderQuantity: 500, // cutouts in total
+    maxUniqueImages: 10, // different photos
   };
 })();
