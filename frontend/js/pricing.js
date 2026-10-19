@@ -2,7 +2,7 @@
  * Shared pricing formula — vanilla JS, no dependencies.
  *
  * This MUST produce the same result as backend/src/services/pricing.js.
- * It exists purely so create.html can show a live price as the customer
+ * It exists purely so the studio can show a live price as the customer
  * configures their order. The number it shows is never what's actually
  * charged — the backend recomputes from scratch before creating the
  * Stripe Checkout session. See docs/backend-guide.md.

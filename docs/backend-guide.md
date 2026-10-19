@@ -20,8 +20,10 @@ backend/
 ├── storage/uploads/           — uploaded images when STORAGE_DRIVER=disk
 │                                (gitignored, never served statically)
 └── src/
-    ├── server.js              — startup secret checks, trust proxy, CORS,
-    │                             mounts routes, listens on HOST:PORT
+    ├── server.js              — startup secret checks, trust proxy,
+    │                             optional CORS, mounts /api routes, then
+    │                             serves frontend/ (clean URLs), listens
+    │                             on HOST:PORT
     ├── routes/
     │   ├── _respond.js         — ok()/fail(): the { data, error } envelope +
     │   │                         error code → HTTP status map
@@ -66,6 +68,23 @@ backend/
 
 `migrate.js` re-runs **every** file each time, so migrations must be
 idempotent. See `database-schema.md`.
+
+## One port: API + site
+
+`server.js` serves everything from one Express app (http://localhost:4000
+locally), in this order:
+
+1. `/api/webhooks/stripe` (raw body), then `express.json()` and the `/api`
+   routers, plus `/health`
+2. any other `/api/*` → a JSON 404 (never an HTML page)
+3. `express.static(frontend/, { extensions: ["html"] })`, which serves `/` →
+   `index.html` and `/pricing` → `pricing.html` (the `.html` URLs work too).
+   Dotfiles aren't served.
+4. `/favicon.ico` → `/favicon.svg`; anything else → plain-text 404
+
+The browser calls the API on the same origin, so **no CORS is configured**
+unless `FRONTEND_ORIGIN` is set (only needed if the frontend is ever hosted
+elsewhere). In production Caddy proxies everything to this one app.
 
 ## Request lifecycle (example: placing an order)
 
@@ -282,12 +301,12 @@ All are in `backend/.env.example` with working dev defaults, except
 | `PORT` | `4000` | listen port |
 | `HOST` | `0.0.0.0` | listen address; `127.0.0.1` in production (behind Caddy) |
 | `TRUST_PROXY` | `loopback` | Express `trust proxy`; `true`/`false`/hop count/subnets also accepted |
-| `FRONTEND_ORIGIN` | `*` | CORS origin, when the frontend is served from another origin |
+| `FRONTEND_ORIGIN` | (unset: no CORS) | only if the frontend is hosted on a different origin; enables CORS for that origin |
 | `DATABASE_URL` | (none) | Postgres connection string |
 | `STRIPE_SECRET_KEY` | (none) | required for checkout sessions |
 | `STRIPE_WEBHOOK_SECRET` | (none) | verifies webhook signatures |
-| `STRIPE_SUCCESS_URL` | (none) | redirect after payment; `{ORDER_ID}` is substituted |
-| `STRIPE_CANCEL_URL` | (none) | redirect if the customer cancels |
+| `STRIPE_SUCCESS_URL` | `${PUBLIC_API_URL}/order-status?order={ORDER_ID}` | redirect after payment; `{ORDER_ID}` is substituted |
+| `STRIPE_CANCEL_URL` | `${PUBLIC_API_URL}/checkout` | redirect if the customer cancels (back to the cart) |
 | `STORAGE_DRIVER` | `disk` | `disk` or `s3` |
 | `UPLOAD_DIR` | `./storage/uploads` | disk driver location, relative to `backend/` |
 | `S3_BUCKET` | (none) | s3 driver bucket (private) |
@@ -295,7 +314,7 @@ All are in `backend/.env.example` with working dev defaults, except
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (none) | AWS credentials; without them email logs to the console |
 | `UPLOAD_MAX_MB` | `25` | upload size cap |
 | `UPLOAD_MIN_LONG_EDGE_PX` | `2000` | minimum long edge, after rotation |
-| `PUBLIC_API_URL` | `http://localhost:4000` | base URL used in download links |
+| `PUBLIC_API_URL` | `http://localhost:4000` | the site's public address (site and API share it): download links and the default Stripe return URLs |
 | `FILE_LINK_SECRET` | dev default | HMAC key for download links (32+ characters in production) |
 | `DOWNLOAD_LINK_TTL_DAYS` | `30` | download link lifetime |
 | `ADMIN_TOKEN` | dev default | admin shared secret (32+ characters in production) |

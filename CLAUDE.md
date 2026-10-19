@@ -13,8 +13,10 @@ who produces and ships the product directly to the customer.
 
 - **Frontend: plain HTML, CSS, and vanilla JS. No React, no build step, no
   framework.** Each page is its own `.html` file with shared `css/style.css`
-  and small page-specific JS files. Open `frontend/index.html` in a browser
-  and it works — no `npm run build` required for the frontend.
+  and small page-specific JS files. The Express backend serves `frontend/`
+  on the same port as the API: run `npm run dev` in `backend/` and open
+  http://localhost:4000 (clean URLs like `/pricing` work). No
+  `npm run build` for the frontend, and no CORS or API base URL.
   Storefront copy that isn't real yet (rating, quotes, turnaround, "from"
   price) is marked `PLACEHOLDER` in `index.html` or lives in
   `frontend/js/site-config.js`. Keep new unknowns there, never in prices.

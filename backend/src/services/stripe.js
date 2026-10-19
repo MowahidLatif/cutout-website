@@ -11,6 +11,20 @@ function getClient() {
   return stripeClient;
 }
 
+// Where Stripe sends the customer afterwards. The site is served by this
+// backend, so by default both are pages on PUBLIC_API_URL (the site's address).
+function siteUrl() {
+  return (process.env.PUBLIC_API_URL || "http://localhost:4000").replace(/\/$/, "");
+}
+
+function successUrl() {
+  return process.env.STRIPE_SUCCESS_URL || `${siteUrl()}/order-status?order={ORDER_ID}`;
+}
+
+function cancelUrl() {
+  return process.env.STRIPE_CANCEL_URL || `${siteUrl()}/checkout`;
+}
+
 /**
  * Creates a Stripe Checkout Session for an order that's already been
  * priced server-side. Never pass a client-supplied amount here.
@@ -49,8 +63,8 @@ async function createCheckoutSession(order) {
           "Damaged or misprinted? We'll reprint it free (see our returns policy).",
       },
     },
-    success_url: (process.env.STRIPE_SUCCESS_URL || "").replace("{ORDER_ID}", order.id),
-    cancel_url: process.env.STRIPE_CANCEL_URL,
+    success_url: successUrl().replace("{ORDER_ID}", order.id),
+    cancel_url: cancelUrl(),
     metadata: { orderId: order.id },
   });
 

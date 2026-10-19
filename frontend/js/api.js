@@ -2,9 +2,10 @@
  * Tiny fetch() wrapper for talking to the backend.
  * Loaded as a plain <script> tag — attaches to `window.Api`.
  *
- * Set `window.API_BASE_URL` before this script runs (e.g. in each page's
- * inline <script> block) to point at the backend, or leave it unset to
- * default to a same-origin "/api".
+ * The backend serves the site and the API from the same origin, so calls go
+ * to "/api" and nothing needs configuring. (Only if the frontend is ever
+ * hosted elsewhere: set `window.API_BASE_URL` before this script runs, and
+ * FRONTEND_ORIGIN on the backend for CORS.)
  */
 (function () {
   const BASE_URL = window.API_BASE_URL || "/api";

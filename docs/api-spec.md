@@ -21,6 +21,12 @@ Every failure has the shape
 `GET /files/:key` and `POST /webhooks/stripe` don't use the envelope (see
 below). `GET /health` (outside `/api`) returns `{ "status": "ok" }`.
 
+Any other `/api/*` path is a JSON 404 (`NOT_FOUND`). Everything outside
+`/api` is the website itself: `frontend/` is served by the same app, with
+clean URLs (`/pricing` → `pricing.html`). See `backend-guide.md`, "One port". The
+browser calls the API on the same origin, so no CORS headers are sent unless
+`FRONTEND_ORIGIN` is set.
+
 ## Public endpoints
 
 ### `GET /pricing-config`

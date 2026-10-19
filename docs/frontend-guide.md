@@ -5,9 +5,16 @@ Read `architecture.md` first. This doc governs everything under `frontend/`.
 ## Philosophy
 
 Plain HTML, plain CSS, small vanilla JS files. No React, no JSX, no
-bundler, and no npm install needed to run the frontend at all. Open an
-`.html` file in a browser (or serve the folder with any static file
-server) and it works.
+bundler, and no build step. **The Express backend serves this folder** on
+the same origin as the API: run the backend and open http://localhost:4000.
+The JS calls `/api/...` directly, with no base URL and no CORS. (Opening the
+`.html` files from disk shows the layout, but nothing that needs the API
+will work.)
+
+**Clean URLs:** `/pricing`, `/checkout`, `/policies`, `/order-status`,
+`/admin` and `/create` serve the matching `.html` file (via
+`express.static`'s `extensions` option). The `.html` URLs work too, and the
+pages link to each other with relative `*.html` links.
 
 ## Folder structure
 
@@ -23,6 +30,7 @@ frontend/
 │                          changes + history (not in the site nav; noindex)
 ├── policies.html        — returns & refunds: final sale, free reprint if damaged
 ├── create.html          — redirect to index.html#studio (keeps old links working)
+├── favicon.svg          — site icon (/favicon.ico redirects here)
 ├── css/
 │   └── style.css        — one shared stylesheet: tokens, components, breakpoints
 ├── img/                 — PLACEHOLDER illustrations (hero, gallery, sample);
@@ -120,9 +128,10 @@ transitions.
 `window.Api` has `get(path, headers?)`, `post(path, data, headers?)`,
 `patch(path, data, headers?)` and `upload(path, formData, headers?)`.
 
-- Paths are relative to `window.API_BASE_URL` (set it before `api.js`
-  loads), or same-origin `/api` by default, which is the setup behind
-  Caddy in production.
+- Calls go to same-origin `/api`, both locally (http://localhost:4000)
+  and in production behind Caddy. `window.API_BASE_URL` remains as an
+  escape hatch only if the frontend is ever hosted on another origin, in
+  which case also set `FRONTEND_ORIGIN` on the backend for CORS.
 - JSON bodies get `Content-Type: application/json`. `upload` sends
   `FormData` and lets the browser set the multipart boundary.
 - On success it returns the envelope's `data`. On failure it throws an

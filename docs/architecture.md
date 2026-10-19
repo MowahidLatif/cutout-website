@@ -65,9 +65,10 @@ can be validated and auto-rotated. They're stored on S3 in production or
 on local disk in dev (`STORAGE_DRIVER`), so the whole flow runs without
 AWS.
 
-The frontend can be hosted as plain static files (S3 + CloudFront, or
-anywhere that serves static HTML) — there's no build step and nothing to
-compile.
+The frontend is plain static files with no build step, **served by the same
+Express app as the API** (one port, http://localhost:4000 locally; behind
+Caddy in production). The browser calls `/api` on the same origin, so there's
+no CORS and no separate static host.
 
 ## 4. Key architectural decisions
 

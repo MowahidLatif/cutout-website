@@ -26,7 +26,11 @@ cp .env.example .env
 # edit .env: DATABASE_URL, STRIPE_SECRET_KEY, etc.
 ```
 
-### 2. Backend
+### 2. Start the site (backend + frontend, one port)
+
+The Express backend serves both the API (`/api/...`) and the static site
+(`frontend/`), so there's one process, one port, no CORS and no frontend
+build step.
 
 Needs Node ≥ 20.9 (for `sharp`). `backend/.nvmrc` pins 22, so `nvm use`
 works.
@@ -40,36 +44,31 @@ production.
 cd backend
 nvm use
 npm install
-npm run migrate   # applies backend/src/db/migrations/*.sql
-npm run dev        # starts the API on http://localhost:4000
+npm run migrate   # applies backend/src/db/migrations/*.sql (safe to re-run)
+npm run dev       # restarts on backend changes; `npm start` doesn't
 ```
 
-### 3. Frontend
+Then open **http://localhost:4000**.
 
-The frontend is static files — no build step. Serve the `frontend/`
-folder with any static server, e.g.:
+| Page | URL |
+|---|---|
+| Storefront + studio | http://localhost:4000/ (studio: `/#studio`) |
+| Cart & checkout | http://localhost:4000/checkout |
+| Pricing | http://localhost:4000/pricing |
+| Returns policy | http://localhost:4000/policies |
+| Order status | http://localhost:4000/order-status |
+| Admin (not linked in the nav) | http://localhost:4000/admin |
 
-```bash
-cd frontend
-npx serve .
-# or: python3 -m http.server 5500
-```
+Clean URLs and the `.html` versions both work. Frontend files are served
+fresh on every request, so after editing HTML/CSS/JS just refresh the
+browser. Backend changes need a restart (automatic with `npm run dev`).
 
-By default `frontend/js/api.js` calls a same-origin `/api`. If you're
-serving the frontend separately from the backend (as above), set
-`window.API_BASE_URL` before `api.js` loads — e.g. add this to each page's
-`<head>`:
+After paying, Stripe returns the customer to `/order-status?order=…`, or to
+`/checkout` if they cancel. These are built from `PUBLIC_API_URL`, which
+defaults to `http://localhost:4000`. No `FRONTEND_ORIGIN` / CORS setting is
+needed, since everything is on one origin.
 
-```html
-<script>window.API_BASE_URL = "http://localhost:4000/api";</script>
-```
-
-Make sure `FRONTEND_ORIGIN` in `backend/.env` matches wherever you're
-serving the frontend from, so CORS allows it.
-
-The storefront is `index.html` (hero, the studio where standees are
-designed, how it works, gallery), plus `checkout.html` (cart →
-Stripe). See `docs/frontend-guide.md`.
+See `docs/frontend-guide.md` for the pages.
 
 #### Before launch: replace the placeholders
 
@@ -94,9 +93,9 @@ two places:
 - `frontend/img/*.svg` are generated illustrations. Replace them with real
   photos (and update the `src`).
 
-### 4. Admin page
+### 3. Admin page
 
-Open `frontend/admin.html` (it isn't linked from the site nav). Enter
+Open http://localhost:4000/admin (it isn't linked from the site nav). Enter
 your name and `ADMIN_TOKEN` from `backend/.env` (dev default:
 `dev-admin-token`). Both are kept only for that browser tab. From there
 you can see orders, download each order's photo, generate fresh expiring
@@ -116,23 +115,18 @@ under 32 characters), `HOST=127.0.0.1`, `TRUST_PROXY=loopback`, and
 `PUBLIC_API_URL=https://<your domain>`.
 
 Put Caddy in front for HTTPS. It gets certificates automatically and
-forwards `X-Forwarded-For`/`X-Forwarded-Proto` by default:
+forwards `X-Forwarded-For`/`X-Forwarded-Proto` by default. Express serves
+both the site and the API, so everything goes to the one app:
 
 ```
 yourdomain.com {
-  handle /api/* {
-    reverse_proxy 127.0.0.1:4000
-  }
-  handle {
-    root * /path/to/cutout-website/frontend
-    file_server
-  }
+  reverse_proxy 127.0.0.1:4000
 }
 ```
 
 Admin requests that don't arrive over HTTPS are refused in production.
 
-### 5. Stripe webhook (local testing)
+### 4. Stripe webhook (local testing)
 
 Use the [Stripe CLI](https://stripe.com/docs/stripe-cli) to forward events
 to your local backend:

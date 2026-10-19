@@ -1,6 +1,8 @@
 require("dotenv").config();
+const path = require("path");
 const express = require("express");
 const cors = require("cors");
+const { fail } = require("./routes/_respond");
 
 const pricingRoutes = require("./routes/pricing");
 const orderRoutes = require("./routes/orders");
@@ -50,11 +52,13 @@ function parseTrustProxy(value) {
 const app = express();
 app.set("trust proxy", parseTrustProxy(process.env.TRUST_PROXY));
 
-app.use(
-  cors({
-    origin: process.env.FRONTEND_ORIGIN || "*",
-  })
-);
+// The site is served by this same app (see the bottom of this file), so the
+// browser calls the API on the same origin and no CORS is needed. Only if
+// you deliberately host the frontend somewhere else, set FRONTEND_ORIGIN to
+// that origin to allow it.
+if (process.env.FRONTEND_ORIGIN) {
+  app.use(cors({ origin: process.env.FRONTEND_ORIGIN }));
+}
 
 // Stripe webhooks need the raw body for signature verification, so this
 // exact path gets its own raw parser and is mounted BEFORE express.json().
@@ -72,6 +76,23 @@ app.use("/api", fileRoutes);
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+// Unknown API paths get a JSON 404 rather than falling through to the site.
+app.use("/api", (req, res) => {
+  fail(res, Object.assign(new Error(`No API route for ${req.method} ${req.originalUrl}.`), { code: "NOT_FOUND" }));
+});
+
+// The static site (frontend/), on the same origin as the API. `extensions`
+// gives clean URLs: /pricing serves pricing.html (the .html URLs still work).
+const FRONTEND_DIR = path.resolve(__dirname, "../../frontend");
+app.use(express.static(FRONTEND_DIR, { extensions: ["html"] }));
+
+// Browsers ask for /favicon.ico on pages without an icon tag.
+app.get("/favicon.ico", (req, res) => res.redirect(301, "/favicon.svg"));
+
+app.use((req, res) => {
+  res.status(404).type("text/plain").send("Not found");
 });
 
 // In production set HOST=127.0.0.1 so the API is only reachable through
