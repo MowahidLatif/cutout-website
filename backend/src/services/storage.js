@@ -141,8 +141,12 @@ function createDownloadUrl(key, { ttlSeconds, relative = false } = {}) {
  * @returns {Promise<{ width: number, height: number }>}
  */
 async function readImageSize(key) {
-  const { width, height } = await sharp(await readFile(key)).metadata();
-  return { width, height };
+  const image = sharp(await readFile(key));
+  const { width, height, hasAlpha } = await image.metadata();
+  // "Transparent" means some pixels really are see-through (a cutout), not
+  // just that the file has an alpha channel.
+  const transparent = hasAlpha ? !(await image.stats()).isOpaque : false;
+  return { width, height, transparent };
 }
 
 /** The stored file's bytes (for the admin's supplier bundle). */

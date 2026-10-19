@@ -17,6 +17,7 @@ order by `npm run migrate`:
 | `006_cad_and_final_sale.sql` | `orders.currency`, final-sale acceptance columns, `payments.currency`, `schema_flags`; converts the USD seed prices to CAD (once) |
 | `007_print_quality.sql` | `order_items` image pixel size, `print_ppi`, `low_quality_accepted` |
 | `008_admin_and_names.sql` | `orders.customer_name`, shipping/tracking columns, `order_items.print_score`, `order_notes` table, list indexes |
+| `009_transparency.sql` | `order_items.has_transparency` |
 
 `migrate.js` re-runs **every** file on each run, so every migration must
 be idempotent (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`, guarded `DO`
@@ -61,6 +62,7 @@ blocks).
 | image_width_px / image_height_px | integer | pixel size of the stored (processed) image, measured by the server; null before `007` |
 | print_ppi | integer | pixels per printed inch at the ordered size |
 | print_score | integer | 0–100: `min(100, ppi × 2)`, capped at 59 under 1000 px (great ≥ 90, good ≥ 60, fair ≥ 36, low below); null before `008` |
+| has_transparency | boolean | true when the stored print file has transparent pixels (a background-removed cutout: cut along the outline). Measured by the server with sharp at order time; default false, so it's false for rows from before `009` |
 | low_quality_accepted | boolean | true when the item was low quality and the customer ticked "I understand this may print blurry" |
 | text_elements | jsonb | `[{ style: "bubble"\|"placard"\|"caption", text }]`, max 3, text 1–100 characters; default `[]` |
 | quantity | integer | `> 0` |

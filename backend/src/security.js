@@ -54,8 +54,9 @@ const limits = {
   // POST /api/orders and POST /api/orders/:id/checkout-session (each).
   createOrder: limiter({ limit: 10, message: "Too many orders from your connection. Please wait a few minutes and try again." }),
   checkout: limiter({ limit: 10, message: "Too many checkout attempts. Please wait a few minutes and try again." }),
-  // POST /api/uploads — a 10-photo order with a few retries fits comfortably.
-  upload: limiter({ limit: 20, message: "Too many uploads. Please wait a few minutes and try again." }),
+  // POST /api/uploads — each photo can mean two uploads (original + its
+  // background-removed cutout), so a 10-photo order with retries fits.
+  upload: limiter({ limit: 40, message: "Too many uploads. Please wait a few minutes and try again." }),
   // GET /api/orders/:id (customer order lookup).
   lookup: limiter({ limit: 30, message: "Too many lookups. Please wait a few minutes and try again." }),
   // Admin: only failed sign-ins count toward 10 …
@@ -86,11 +87,18 @@ function securityHeaders() {
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "https://js.stripe.com"],
+        // jsDelivr serves the in-browser background remover (Transformers.js,
+        // pinned); 'wasm-unsafe-eval' lets it run its WebAssembly model runtime,
+        // and blob: is how that runtime loads its own (jsDelivr-fetched) loader.
+        // A blob: script can only be created by JS already running on the page.
+        scriptSrc: ["'self'", "https://js.stripe.com", "https://cdn.jsdelivr.net", "'wasm-unsafe-eval'", "blob:"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc,
-        connectSrc: ["'self'", "https://api.stripe.com"],
+        // jsDelivr: the model runtime's WebAssembly. Hugging Face: the MODNet
+        // model files (huggingface.co redirects to its regional *.hf.co CDN).
+        connectSrc: ["'self'", "https://api.stripe.com", "https://cdn.jsdelivr.net", "https://huggingface.co", "https://*.hf.co"],
+        workerSrc: ["'self'", "blob:"],
         frameSrc: ["https://js.stripe.com", "https://checkout.stripe.com"],
         formAction: ["'self'", "https://checkout.stripe.com"],
         frameAncestors: ["'none'"],

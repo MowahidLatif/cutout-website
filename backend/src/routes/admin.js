@@ -172,6 +172,11 @@ function orderDetailsText(order) {
     if (item.imageWidthPx) {
       lines.push(`  Image: ${item.imageWidthPx} × ${item.imageHeightPx} px` + (item.printScore != null ? `, print quality ${item.printScore}/100` : ""));
     }
+    lines.push(
+      item.hasTransparency
+        ? "  Background: removed — transparent PNG, cut along the outline"
+        : "  Background: kept (print the whole photo)"
+    );
   });
   return lines.join("\n") + "\n";
 }

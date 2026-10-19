@@ -30,7 +30,7 @@ restart resets them):
 |---|---|
 | `POST /orders` | 10 |
 | `POST /orders/:id/checkout-session` | 10 |
-| `POST /uploads` | 20 |
+| `POST /uploads` | 40 (a photo and its background-removed cutout are two uploads) |
 | `GET /orders/:id` (lookup) | 30 |
 | `/admin/*` | 10 failed sign-ins; 300 in total |
 
@@ -82,7 +82,8 @@ checked and cleaned up:
 
 - **Type** (detected from the file contents; the file name and Content-Type
   are ignored):
-  - **JPEG, PNG, WebP:** kept as they are.
+  - **JPEG, PNG, WebP:** kept as they are. A PNG with transparency (the
+    studio's background-removed cutout) keeps its transparency.
   - **HEIC** (iPhone): converted to JPEG.
   - **PDF:** page 1 rendered to a PNG about 6000 px on its long side. A
     multi-page PDF returns a `note`. A password-protected or broken PDF is
@@ -93,7 +94,8 @@ checked and cleaned up:
   the most a file can be and still go by email: mailboxes cap a whole
   message at 20–25 MB, and attachments grow by about a third when encoded.
   The stored print file is kept under the same limit; if processing makes
-  it bigger, it's re-encoded as JPEG and scaled down until it fits.
+  it bigger, it's re-encoded as JPEG and scaled down until it fits. A
+  transparent PNG stays PNG and is only scaled down.
 - **No minimum resolution.** The response includes the pixel size, and the
   studio shows a 0–100 print-quality score. Photos under 1000 px on their
   long side can't score above "fair". A **low** rating has to be confirmed
@@ -228,10 +230,16 @@ Response: the full order.
     { "id": "…", "imageKey": "….jpg", "sizeTier": "life_size", "material": "coroplast",
       "heightIn": 68, "widthIn": 51, "textElements": [{ "style": "bubble", "text": "Happy 40th, Dave!" }],
       "imageWidthPx": 3024, "imageHeightPx": 4032, "printPpi": 59, "lowQualityAccepted": false,
+      "hasTransparency": false,
       "quantity": 3, "unitPrice": 76, "lineTotal": 228 }
   ]
 }
 ```
+
+`hasTransparency` is true when the item's print file is a PNG with
+transparent pixels, i.e. the customer kept "Remove background" on. The
+server reads this from the stored file, not from anything the browser
+sends. The supplier is told to cut along the outline.
 
 ### `GET /files/:key?exp=…&sig=…`
 An expiring download link for an uploaded image (HMAC-SHA256 over

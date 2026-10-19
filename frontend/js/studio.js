@@ -20,6 +20,7 @@
       texts: [], // [{ style, text }]
       material: SITE.materials.find((m) => !m.comingSoon).id,
       quantity: 1,
+      removeBackground: true, // per photo; the customer can switch it off
     };
   }
 
@@ -27,7 +28,10 @@
     pricingConfig: null, // { currency, rates, discountTiers, shippingRates }
     // One design per photo:
     // { id, name, file, objectUrl, src, aspect, isSample, uploadPromise, imageKey,
-    //   uploadError, ...settings }
+    //   uploadError, ...settings,
+    //   original: { key, src }, cutout: { key, src } | null,   // the two printable versions
+    //   bgStatus: null | "processing" | "done" | "failed", bgProgress }
+    // `imageKey` / `src` always point at the version the customer chose.
     designs: [],
     activeId: null,
     // Settings edited before any photo is added; new photos start from these.
@@ -72,6 +76,11 @@
     widthInches: $("width-in"),
     widthHint: $("width-hint"),
     qualityRow: $("quality-row"),
+    bgRow: $("bg-row"),
+    removeBg: $("remove-bg"),
+    bgHint: $("bg-hint"),
+    stageBusy: $("stage-busy"),
+    stageBusyText: $("stage-busy-text"),
     qualityBadge: $("quality-badge"),
     qualityTip: $("quality-tip"),
     qualityConsent: $("quality-consent"),
@@ -289,6 +298,10 @@
       heightPx: null,
       note: null, // e.g. "Your PDF has 3 pages — we'll print page 1."
       acceptedLowQuality: false,
+      original: null,
+      cutout: null,
+      bgStatus: null,
+      bgProgress: null,
       ...base,
       ...fields,
     };
@@ -367,6 +380,8 @@
         design.aspect = result.width / result.height;
         design.src = result.previewUrl;
         design.note = result.note || null;
+        design.original = { key: result.imageKey, src: result.previewUrl };
+        if (design.removeBackground) startBackgroundRemoval(design);
         renderAll();
       },
       (err) => {
@@ -378,6 +393,7 @@
 
   function removeDesign(design) {
     if (design.objectUrl) URL.revokeObjectURL(design.objectUrl);
+    if (design.cutout) URL.revokeObjectURL(design.cutout.src);
     const index = state.designs.indexOf(design);
     state.designs.splice(index, 1);
     if (state.activeId === design.id) {
@@ -417,11 +433,90 @@
     els.trayMessage.classList.remove("visible");
   }
 
+  // ---------- Background removal (in the browser, js/background-removal.js) ----------
+  /** Points imageKey/src at the version the customer chose (cutout or original). */
+  function applyBackgroundChoice(design) {
+    const version = design.removeBackground && design.cutout ? design.cutout : design.original;
+    if (version) {
+      design.imageKey = version.key;
+      design.src = version.src;
+    }
+  }
+
+  function backgroundProgressText(d) {
+    const p = d.bgProgress;
+    if (p && p.phase === "downloading") return `Downloading the background remover (first time only)… ${p.percent}%`;
+    if (p && p.phase === "queued") return "Waiting to remove background…";
+    return "Removing background…";
+  }
+
+  function backgroundLabel(d) {
+    if (d.bgStatus === "processing") return "Background: removing…";
+    if (d.bgStatus === "failed") return "Background: kept (removal failed)";
+    if (!d.removeBackground) return "Background: kept";
+    return d.cutout ? "✓ Background removed" : "Background: kept";
+  }
+
+  /**
+   * Cuts the photo out from the server's processed version (already upright
+   * and converted from PDF/HEIC, so the cutout matches what's printed), then
+   * uploads the transparent PNG as the print file. On failure the original is
+   * kept and the customer is told.
+   */
+  async function startBackgroundRemoval(design) {
+    if (design.isSample || !design.original || design.bgStatus === "processing") return;
+    if (design.cutout) {
+      applyBackgroundChoice(design);
+      return;
+    }
+    if (!window.BackgroundRemoval || !BackgroundRemoval.isSupported()) {
+      return backgroundFailed(design, "this browser can't run it");
+    }
+    hideTrayMessage();
+    design.bgStatus = "processing";
+    design.bgProgress = null;
+    renderAll();
+    try {
+      const blob = await BackgroundRemoval.remove(design.original.src, {
+        onStatus: (status) => {
+          design.bgProgress = status;
+          renderTray();
+          renderStage();
+        },
+      });
+      if (!state.designs.includes(design)) return; // removed while processing
+      const formData = new FormData();
+      formData.append("image", new File([blob], "cutout.png", { type: "image/png" }));
+      const result = await Api.upload("/uploads", formData);
+      design.cutout = { key: result.imageKey, src: URL.createObjectURL(blob) };
+      design.bgStatus = "done";
+      applyBackgroundChoice(design);
+      renderAll();
+    } catch (err) {
+      // Technical detail goes to the console; the customer gets a plain notice.
+      console.warn("Background removal failed:", err);
+      backgroundFailed(design, null);
+    }
+  }
+
+  function backgroundFailed(design, reason) {
+    if (!state.designs.includes(design)) return;
+    design.bgStatus = "failed";
+    design.removeBackground = false;
+    applyBackgroundChoice(design);
+    showTrayMessage(
+      `We couldn't remove the background from ${design.name}${reason ? ` (${reason})` : ""} — we'll print it as uploaded. ` +
+        "You can try again from its photo card."
+    );
+    renderAll();
+  }
+
   // ---------- Tray ----------
   function designStatus(d) {
     if (d.isSample) return "Sample — preview only";
     if (d.uploadError) return d.uploadError;
     if (!d.imageKey) return d.src ? "Uploading…" : "Processing…";
+    if (d.bgStatus === "processing") return backgroundProgressText(d);
     if (widthProblem(d)) return "Check the size";
     const q = qualityOf(d);
     if (q) {
@@ -452,14 +547,23 @@
         return `
         <div class="tray-card${d.id === state.activeId ? " is-active" : ""}${hasError ? " has-error" : ""}" data-id="${d.id}" role="listitem">
           <button type="button" class="tray-card__select" aria-pressed="${d.id === state.activeId}" aria-label="Edit ${escapeHtml(d.name)}">
-            ${
-              d.src
-                ? `<img class="tray-card__thumb" src="${escapeHtml(d.src)}" alt="" />`
-                : '<span class="tray-card__thumb tray-card__thumb--processing">Processing…</span>'
-            }
+            <span class="tray-card__thumb-wrap${d.cutout && d.removeBackground ? " is-cutout" : ""}">
+              ${
+                d.src
+                  ? `<img class="tray-card__thumb" src="${escapeHtml(d.src)}" alt="" />`
+                  : '<span class="tray-card__thumb tray-card__thumb--processing">Processing…</span>'
+              }
+              ${d.bgStatus === "processing" ? '<span class="spinner-overlay" aria-hidden="true"><span class="spinner"></span></span>' : ""}
+            </span>
             <span class="tray-card__name">${escapeHtml(d.name)}</span>
             <span class="tray-card__status">${escapeHtml(status)}</span>
+            ${d.isSample || !d.imageKey ? "" : `<span class="tray-card__bg">${escapeHtml(backgroundLabel(d))}</span>`}
           </button>
+          ${
+            d.bgStatus === "failed"
+              ? `<button type="button" class="link-accent tray-card__retry" data-retry-bg>Try removing the background again</button>`
+              : ""
+          }
           ${
             d.isSample
               ? ""
@@ -494,6 +598,12 @@
     if (!card) return;
     const design = state.designs.find((d) => d.id === card.dataset.id);
     if (!design) return;
+    if (e.target.closest("[data-retry-bg]")) {
+      design.removeBackground = true;
+      startBackgroundRemoval(design);
+      renderAll();
+      return;
+    }
     if (e.target.closest("[data-remove]")) {
       removeDesign(design);
       hideTrayMessage();
@@ -686,6 +796,10 @@
     const d = active();
     const hasPhoto = Boolean(d.src);
     els.figure.hidden = !hasPhoto;
+    els.figure.classList.toggle("is-cutout", Boolean(d.cutout && d.removeBackground));
+    const busy = d.bgStatus === "processing";
+    els.stageBusy.hidden = !busy;
+    if (busy) els.stageBusyText.textContent = backgroundProgressText(d);
     // A PDF/HEIC still being processed has no picture yet, but isn't "empty".
     els.stageDropzone.hidden = hasPhoto || state.designs.includes(d);
     els.sampleTag.hidden = !d.isSample;
@@ -802,6 +916,8 @@
     }
     const failed = real.find((d) => d.uploadError);
     if (failed) return `${failed.name}: ${failed.uploadError} Remove it to continue.`;
+    const removing = real.filter((d) => d.bgStatus === "processing").length;
+    if (removing) return `Removing the background from ${plural(removing, "photo")}…`;
     const uploading = real.filter((d) => !d.imageKey).length;
     if (uploading) return `Uploading ${plural(uploading, "photo")}…`;
     if (!state.pricingConfig) return "Loading prices…";
@@ -888,6 +1004,29 @@
     els.acceptLowQuality.checked = d.acceptedLowQuality;
   }
 
+  els.removeBg.addEventListener("change", () => {
+    const d = active();
+    d.removeBackground = els.removeBg.checked;
+    if (d.removeBackground && !d.cutout) startBackgroundRemoval(d);
+    applyBackgroundChoice(d);
+    hideTrayMessage();
+    renderAll();
+  });
+
+  function renderBackgroundToggle(d) {
+    const show = state.designs.includes(d) && !d.isSample && Boolean(d.original);
+    els.bgRow.hidden = !show;
+    if (!show) return;
+    els.removeBg.checked = d.removeBackground;
+    els.removeBg.disabled = d.bgStatus === "processing";
+    els.bgHint.textContent =
+      d.bgStatus === "processing"
+        ? backgroundProgressText(d)
+        : d.bgStatus === "failed"
+          ? "Removal didn't work on this photo — it will print as uploaded."
+          : "Works best on people. Turn off to keep the whole photo (e.g. a group in front of a backdrop).";
+  }
+
   els.acceptLowQuality.addEventListener("change", () => {
     active().acceptedLowQuality = els.acceptLowQuality.checked;
     renderAll();
@@ -923,6 +1062,7 @@
     els.widthHint.style.color = problem ? "var(--error)" : "";
 
     renderQuality(d);
+    renderBackgroundToggle(d);
 
     renderStage();
     renderPrice();

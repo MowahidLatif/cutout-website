@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("path");
-const { SRC, useTestDb, useTempUploads, uploadPhoto, orderInput } = require("./helpers");
+const { SRC, useTestDb, useTempUploads, uploadPhoto, makeCutoutPng, orderInput } = require("./helpers");
 
 let db, email, orders;
 
@@ -53,6 +53,21 @@ test("both emails list every item in full, with plurals, final-sale text and sit
   }
   assert.equal(fulfillment.to, "orders@shop.example.com");
   assert.ok(customer.body.includes("we can't accept returns or give refunds."));
+});
+
+test("transparency is read from the stored file and tells the supplier how to cut", async () => {
+  const { processUpload } = require(path.join(SRC, "services/uploads"));
+  const cutout = (await processUpload(await makeCutoutPng(600, 900))).imageKey;
+  const order = await orders.createOrder(
+    orderInput([
+      { material: "coroplast", heightIn: 12, quantity: 1, imageKey: cutout }, // small: the fixture is only 900px tall
+      { material: "coroplast", heightIn: 68, quantity: 1, imageKey: await uploadPhoto() },
+    ])
+  );
+  const saved = await orders.getOrderById(order.id);
+  assert.deepEqual(saved.items.map((i) => i.hasTransparency), [true, false]);
+  const { body } = email.buildFulfillmentEmail(saved);
+  assert.match(body, /Background: removed — transparent PNG, cut along the outline[\s\S]*Background: kept \(print the whole photo\)/);
 });
 
 test("the shipped email includes carrier, tracking and the status link", async () => {

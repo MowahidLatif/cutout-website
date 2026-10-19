@@ -164,6 +164,7 @@ test("the supplier bundle is a zip of the order details and images, named by ord
     assert.match(details, /SHIP TO\nJane Doe\n1 Main St\nWinnipeg, MB R3C 0A1\nCA/);
     assert.match(details, /Quantity: 2\n  Material: Premium Corrugated \(corrugated plastic \/ Coroplast\)/);
     assert.match(details, /Speech bubble: "Hi!"/);
+    assert.match(details, /Background: kept \(print the whole photo\)/);
     const image = execFileSync("unzip", ["-p", file, `${order.id}-item-1.jpg`]);
     assert.equal(image.subarray(0, 2).toString("hex"), "ffd8", "a real JPEG");
   }

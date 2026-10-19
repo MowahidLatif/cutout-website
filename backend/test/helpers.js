@@ -149,6 +149,23 @@ async function makeJpeg(width, height) {
   return sharp({ create: { width, height, channels: 3, background: "#b07a5a" } }).jpeg().toBuffer();
 }
 
+/**
+ * A background-removed cutout as the browser uploads it: a PNG whose edges
+ * are fully transparent around an opaque middle. `noise` makes it hard to
+ * compress (to force the over-size shrink).
+ */
+async function makeCutoutPng(width, height, { noise = false } = {}) {
+  const sharp = require("sharp");
+  const data = noise ? require("crypto").randomBytes(width * height * 4) : Buffer.alloc(width * height * 4, 0x80);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const inside = x > width / 4 && x < (width * 3) / 4 && y > height / 8;
+      data[(y * width + x) * 4 + 3] = inside ? 255 : 0;
+    }
+  }
+  return sharp(data, { raw: { width, height, channels: 4 } }).png().toBuffer();
+}
+
 /** A small valid PDF (US Letter) with `pages` pages of vector drawing. */
 function makePdf(pages = 1) {
   const objs = ["<< /Type /Catalog /Pages 2 0 R >>"];
@@ -206,6 +223,7 @@ module.exports = {
   loadFrontend,
   makeJpeg,
   makePdf,
+  makeCutoutPng,
   uploadPhoto,
   orderInput,
   ADDRESS,

@@ -297,6 +297,7 @@
         <p style="margin-top:0"><strong>${escapeHtml(item.quantity)} × ${escapeHtml(item.sizeTier)} · ${escapeHtml(item.material)}</strong> — ${escapeHtml(size)}</p>
         ${(item.textElements || []).map((el) => `<p class="hint">${escapeHtml(el.style)}: “${escapeHtml(el.text)}”</p>`).join("")}
         ${quality ? `<p class="hint">${quality}</p>` : ""}
+        <p class="hint">${item.hasTransparency ? "<strong>Background removed</strong> — transparent PNG, cut along the outline" : "Background kept — print the whole photo"}</p>
         <div class="item-link">${renderLink(item.downloadUrl, item.downloadExpiresAt)}</div>
       </div>`;
   }

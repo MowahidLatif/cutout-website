@@ -45,6 +45,8 @@ frontend/
     ├── api.js            — window.Api: tiny fetch() wrapper
     ├── cart.js           — window.Cart: the cart in localStorage
     ├── layout.js         — mobile nav toggle, footer year, cart badge
+    ├── background-removal.js — window.BackgroundRemoval: in-browser background
+    │                       removal (Transformers.js + MODNet, lazy-loaded)
     ├── studio.js         — the studio on index.html
     ├── checkout.js       — checkout.html
     ├── order-status.js   — order-status.html
@@ -70,8 +72,6 @@ wait on the supplier. They live in exactly two places:
   from the mockups as-is:
   - the "4.9/5 from 12,000+" rating
   - "48 hours"
-  - "Our AI removes the background" (background removal isn't built; photos
-    print as uploaded)
   - the "print-perfect guarantee"
   - the four gallery quotes
 
@@ -210,6 +210,38 @@ limits) and `makeThumbnail(src)`.
      "Processing…" until the upload returns `previewUrl`. For every photo,
      the studio then switches to the server's processed image, which is
      rotated and is exactly what will print.
+   - **Background removal** (`js/background-removal.js`), **on by default**:
+     - **When:** once a photo has uploaded, the studio removes the
+       background from the server's `previewUrl` (already rotated and
+       converted), in the browser.
+     - **What it uses:** Transformers.js 4.3.0 from jsDelivr and the
+       MODNet model (`Xenova/modnet`, ~6.6 MB, pinned revision) from
+       Hugging Face. Both are Apache-2.0. They're downloaded on first use,
+       then cached by the browser. The photo itself isn't sent anywhere
+       extra.
+     - **Queue:** photos are processed one at a time. While they run:
+       - each one has a spinner on its tray card and on the preview
+       - the first time, the status reads "Downloading the background
+         remover (first time only)… N%"
+       - Add to cart waits ("Removing the background from N photos…")
+     - **Success:** the cutout PNG is uploaded as a second file. Each
+       design keeps both versions, in `design.original` and
+       `design.cutout` (`{ key, src }`).
+       - The preview shows the cutout without the white frame (an outline
+         and a shadow), and the tray thumbnail sits on a checkerboard.
+       - `applyBackgroundChoice` points `imageKey` / `src` at the chosen
+         version, so the **"Remove background" toggle** (size card, per
+         photo) switches instantly with no reprocessing.
+     - **Failure** (model download blocked, out of memory…):
+       - the spinner hides, the photo falls back to the original and the
+         toggle turns off
+       - `#tray-message` says "We couldn't remove the background from
+         Photo N — we'll print it as uploaded…" (the detail goes to the
+         console)
+       - the tray card offers **Retry**
+     - The sample photo is never processed.
+     - MODNet is tuned for people; pets and objects can come out rough,
+       which is what the toggle is for.
    - **Print quality:** once the server reports the pixel size, each tray
      card and the size card show **"Quality 84/100 · Good"** from
      `Pricing.printQuality`, updated live as the height changes. There's a

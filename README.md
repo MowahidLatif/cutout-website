@@ -13,6 +13,16 @@ See `CLAUDE.md` and `docs/` for the full spec — this README is just the
 - **Backend:** Express (Node.js) — `backend/`. Flat routes → services → db.
 - **Database:** PostgreSQL.
 - **Payments:** Stripe Checkout.
+- **Background removal:** in the customer's browser, with
+  [Transformers.js](https://github.com/huggingface/transformers.js) 4.3.0
+  and the MODNet model (`Xenova/modnet`). Both are Apache-2.0, so
+  commercial use is fine. The library loads from `cdn.jsdelivr.net` and the
+  model (~6.6 MB, cached after the first photo) from Hugging Face
+  (`huggingface.co`, `*.hf.co`). Photos aren't sent to either; only the
+  code and model are downloaded. To avoid third parties entirely,
+  self-host both under `frontend/`, point `TRANSFORMERS_URL` and the model
+  path in `frontend/js/background-removal.js` at them, and remove those
+  hosts from the CSP in `backend/src/security.js`.
 
 ## Running locally
 
@@ -86,8 +96,7 @@ two places:
 - `frontend/js/site-config.js`: delivery and production days, the "from"
   price, the rating, and the material catalogue.
 - Comments marked `PLACEHOLDER` in `frontend/index.html`: the
-  "4.9/5 from 12,000+" rating, "48 hours", "AI removes the background"
-  (not built), the guarantee, and the four gallery quotes. **The rating
+  "4.9/5 from 12,000+" rating, "48 hours", the guarantee, and the four gallery quotes. **The rating
   and quotes are invented.** Replace them with real, permissioned ones, or
   remove them, before taking real customers.
 - `frontend/img/*.svg` are generated illustrations. Replace them with real

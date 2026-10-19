@@ -48,12 +48,16 @@ who produces and ships the product directly to the customer.
 - **No AI height detection.** Height is a manual number input.
 - **No automated supplier integration.** Fulfillment is a manual email sent
   via SES when an order is paid; a human forwards it to the supplier.
-- **No background removal / image processing pipeline yet.** Uploads are
-  normalized: JPEG/PNG/WebP/HEIC or PDF (page 1 rendered), up to 18 MB, is
+- **Background removal runs in the browser only** (Transformers.js +
+  MODNet, Apache-2.0, `frontend/js/background-removal.js`). It's on by
+  default with a per-photo toggle, and the cutout is uploaded as a
+  transparent PNG. Don't add AGPL/non-commercial models (e.g.
+  @imgly/background-removal, ISNet, RMBG) or a server-side image
+  pipeline. Uploads are normalized: JPEG/PNG/WebP/HEIC or PDF (page 1 rendered), up to 18 MB, is
   accepted (anything else 415), auto-rotated from EXIF, and given a 0–100
   print-quality score (under 1000 px caps at "fair"). There's no minimum
-  resolution; low quality needs the customer's confirmation. No other edits
-  (no background removal).
+  resolution; low quality needs the customer's confirmation. No other
+  server-side edits; transparent PNGs keep their transparency.
 - **All prices and charges are CAD** (`CURRENCY` in
   `backend/src/services/pricing.js`). **All sales are final** (custom-made;
   free reprint if damaged), and checkout requires accepting that.

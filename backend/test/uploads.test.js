@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const sharp = require("sharp");
-const { SRC, useTempUploads, makeJpeg, makePdf } = require("./helpers");
+const { SRC, useTempUploads, makeJpeg, makePdf, makeCutoutPng } = require("./helpers");
 
 const dir = useTempUploads();
 const { processUpload } = require(path.join(SRC, "services/uploads"));
@@ -55,6 +55,29 @@ test("the stored print file is kept small enough to email", async () => {
     const r = await processUpload(png);
     assert.ok(fs.statSync(path.join(dir, r.imageKey)).size <= 0.5 * 1024 * 1024);
     assert.match(r.imageKey, /\.jpg$/);
+  } finally {
+    delete process.env.UPLOAD_MAX_MB;
+  }
+});
+
+test("a background-removed cutout stays a transparent PNG", async () => {
+  const r = await processUpload(await makeCutoutPng(400, 600));
+  assert.match(r.imageKey, /\.png$/);
+  const meta = await stored(r);
+  assert.equal(meta.hasAlpha, true);
+  assert.equal((await sharp(path.join(dir, r.imageKey)).stats()).isOpaque, false);
+});
+
+test("a cutout too big to email is scaled down but keeps its transparency", async () => {
+  process.env.UPLOAD_MAX_MB = "0.5";
+  try {
+    const r = await processUpload(await makeCutoutPng(1200, 1200, { noise: true }));
+    assert.match(r.imageKey, /\.png$/, "not flattened to JPEG");
+    assert.ok(fs.statSync(path.join(dir, r.imageKey)).size <= 0.5 * 1024 * 1024);
+    assert.ok(r.width < 1200, "scaled down");
+    const image = sharp(path.join(dir, r.imageKey));
+    const { data } = await image.clone().extract({ left: 0, top: 0, width: 1, height: 1 }).raw().toBuffer({ resolveWithObject: true });
+    assert.equal(data[3], 0, "corner still transparent");
   } finally {
     delete process.env.UPLOAD_MAX_MB;
   }

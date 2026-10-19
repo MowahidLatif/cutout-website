@@ -66,7 +66,10 @@ backend/
             ├── 003_image_key.sql — order_items.image_url → image_key
             ├── 004_order_status_events.sql — status-change audit log
             ├── 005_item_customization.sql — order_items.width_in + text_elements
-            └── 006_cad_and_final_sale.sql — currency, final-sale acceptance, USD→CAD seeds
+            ├── 006_cad_and_final_sale.sql — currency, final-sale acceptance, USD→CAD seeds
+            ├── 007_print_quality.sql — image pixel size, print_ppi, low_quality_accepted
+            ├── 008_admin_and_names.sql — customer name, tracking, print_score, order_notes
+            └── 009_transparency.sql — order_items.has_transparency
 ```
 
 `migrate.js` re-runs **every** file each time, so migrations must be
@@ -288,8 +291,21 @@ confirmation email includes it.
   directly because S3 caps them at 7 days. In s3 mode the route redirects
   to a 5-minute presigned GET. `SITE_URL` must be the site's public
   address, or the links in emails won't work.
-- Known gaps: uploads that never become orders aren't cleaned up, and
-  there's no rate limit on `POST /api/uploads` yet.
+- **Background-removed cutouts.** Background removal runs in the
+  customer's browser (`frontend/js/background-removal.js`); the server never
+  runs a model. The studio uploads the finished cutout as an ordinary PNG
+  through `POST /api/uploads`, so it gets the same checks as any photo.
+  - `uploads.js` `shrinkToFit` keeps a PNG **with transparent pixels** as a
+    PNG (scaled down only) instead of flattening it to a white JPEG.
+  - `storage.js` `readImageSize` also returns `transparent` (`hasAlpha` and
+    not `stats().isOpaque`). `createOrder` stores it as
+    `order_items.has_transparency`, so this comes from the file, not the
+    browser.
+  - The fulfillment email, admin detail and supplier bundle say
+    "Background: removed — transparent PNG, cut along the outline" or
+    "Background: kept (print the whole photo)".
+- Known gap: uploads that never become orders aren't cleaned up. (With
+  background removal on, every photo leaves an unused original or cutout.)
 
 ## Admin
 
@@ -328,7 +344,7 @@ confirmation email includes it.
   |---|---|
   | create order | 10 |
   | checkout session | 10 |
-  | uploads | 20 |
+  | uploads | 40 (photo + its cutout = 2) |
   | order lookup | 30 |
   | admin | 10 failed sign-ins; 300 total |
 
@@ -337,13 +353,21 @@ confirmation email includes it.
 - **Headers** (`helmet`):
   - **CSP:**
     - `default-src 'self'`
-    - scripts only from our files and `js.stripe.com`; **no inline
+    - scripts only from our files, `js.stripe.com` and `cdn.jsdelivr.net`
+      (the background remover, a pinned Transformers.js); **no inline
       scripts** (the pricing and policies pages load `js/pricing-page.js` /
       `js/policies.js`)
+    - `'wasm-unsafe-eval'` (to run its WebAssembly model runtime) and
+      `blob:` scripts (the runtime loads its own jsDelivr-fetched loader
+      from a blob URL; only script already on the page can create one).
+      Drop all three if background removal is ever removed.
     - styles from self, Google Fonts and inline `style=""`
     - fonts from `fonts.gstatic.com`
     - images from self, `data:`, `blob:` and, with S3, the bucket's origin
-    - `connect-src` self and `api.stripe.com`
+    - `connect-src` self, `api.stripe.com`, `cdn.jsdelivr.net` (the
+      runtime's `.wasm`), `huggingface.co` and `*.hf.co` (the MODNet model
+      files; huggingface.co redirects to a regional `*.hf.co` CDN)
+    - `worker-src` self and `blob:`
     - `frame-ancestors 'none'`
   - HSTS only with `NODE_ENV=production`
   - `nosniff`, `Referrer-Policy: no-referrer`, no `X-Powered-By`

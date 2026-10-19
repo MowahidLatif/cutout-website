@@ -1076,6 +1076,105 @@ p.lead {
   color: var(--ink-soft);
 }
 
+/* Background removal (studio) */
+.bg-row {
+  margin-top: 1.25rem;
+}
+
+.bg-row .toggle {
+  justify-content: space-between;
+  width: 100%;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bg-row .hint {
+  margin: 0.4rem 0 0;
+}
+
+.spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(217, 87, 43, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 253, 250, 0.7);
+  border-radius: 12px;
+}
+
+.tray-card__thumb-wrap {
+  position: relative;
+  display: block;
+}
+
+/* Cutouts sit on a light checkerboard so the transparency is visible. */
+.tray-card__thumb-wrap.is-cutout .tray-card__thumb {
+  object-fit: contain;
+  background: repeating-conic-gradient(#f1ebe3 0% 25%, #fffdfa 0% 50%) 50% / 14px 14px;
+}
+
+.tray-card__bg {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.tray-card__retry {
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.stage__busy {
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 85%;
+  padding: 0.9rem 1.2rem;
+  border-radius: 16px;
+  background: rgba(255, 253, 250, 0.95);
+  box-shadow: var(--shadow-pop);
+  font-weight: 600;
+  z-index: 2;
+}
+
+/* A cut-out standee: no photo frame, a white die-cut edge and a shadow. */
+.stage__figure.is-cutout {
+  filter: none;
+}
+
+.stage__figure.is-cutout img {
+  border: 0;
+  border-radius: 0;
+  object-fit: contain;
+  filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff)
+    drop-shadow(0 10px 14px rgba(31, 25, 21, 0.22));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}
+
 /* Print quality badge (studio) */
 .quality {
   margin-top: 1.25rem;

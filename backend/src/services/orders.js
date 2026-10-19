@@ -184,7 +184,12 @@ async function createOrder(input) {
           "Please confirm you accept that, use a sharper photo, or choose a smaller size."
       );
     }
-    imageSizes.push({ ...size, ppi: quality.ppi, score: quality.score, lowAccepted: quality.grade === "low" });
+    imageSizes.push({
+      ...size,
+      ppi: quality.ppi,
+      score: quality.score,
+      lowAccepted: quality.grade === "low",
+    });
   }
 
   // Recompute every item's price server-side — never trust a price from the client.
@@ -258,8 +263,8 @@ async function createOrder(input) {
         `INSERT INTO order_items
            (order_id, image_key, size_tier, material, height_in, width_in, text_elements,
             quantity, unit_price, line_total, notes,
-            image_width_px, image_height_px, print_ppi, low_quality_accepted, print_score)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+            image_width_px, image_height_px, print_ppi, low_quality_accepted, print_score, has_transparency)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
         [
           order.id,
           item.imageKey,
@@ -277,6 +282,7 @@ async function createOrder(input) {
           item.image.ppi,
           item.image.lowAccepted,
           item.image.score,
+          item.image.transparent,
         ]
       );
     }
@@ -352,6 +358,7 @@ async function getOrderById(orderId, { email } = {}) {
       imageHeightPx: i.image_height_px,
       printPpi: i.print_ppi,
       printScore: i.print_score,
+      hasTransparency: Boolean(i.has_transparency),
       lowQualityAccepted: Boolean(i.low_quality_accepted),
       quantity: i.quantity,
       unitPrice: Number(i.unit_price),

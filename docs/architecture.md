@@ -99,7 +99,9 @@ no CORS and no separate static host.
 ## 5. Explicit non-goals for v1
 
 - User accounts / login
-- AI-based height detection or background removal
+- AI-based height detection
+- Server-side image processing beyond upload checks (background removal
+  runs in the customer's browser; see `frontend-guide.md`)
 - Automated supplier API/EDI integration
 - Multi-supplier routing logic
 - Refund/dispute automation (handle manually via Stripe dashboard for now)

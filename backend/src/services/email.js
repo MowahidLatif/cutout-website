@@ -79,6 +79,11 @@ function formatItem(item, index) {
         (item.lowQualityAccepted ? " — customer accepted low quality" : "")
     );
   }
+  lines.push(
+    item.hasTransparency
+      ? "   Background: removed — transparent PNG, cut along the outline"
+      : "   Background: kept (print the whole photo)"
+  );
   if (isValidKey(item.imageKey)) {
     const { url, expiresAt } = createDownloadUrl(item.imageKey);
     lines.push(`   Image (link expires ${expiresAt.slice(0, 10)}): ${url}`);

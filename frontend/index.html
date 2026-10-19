@@ -166,6 +166,10 @@
                   <div class="stage__texts" id="stage-texts"></div>
                 </div>
                 <span class="chip stage__sample-tag" id="sample-tag" hidden>Sample photo</span>
+                <div class="stage__busy" id="stage-busy" hidden role="status">
+                  <span class="spinner"></span>
+                  <span id="stage-busy-text">Removing background…</span>
+                </div>
 
                 <div class="dropzone stage__dropzone" id="stage-dropzone" role="button" tabindex="0">
                   <span class="icon-badge icon-badge--round"><svg class="icon"><use href="#i-image-up"/></svg></span>
@@ -229,6 +233,16 @@
                   </label>
                 </div>
                 <p class="hint" id="width-hint">Width auto-calculated from your photo's proportions.</p>
+              </div>
+
+              <!-- Background removal for the selected photo (runs in the browser). -->
+              <div class="bg-row" id="bg-row" hidden>
+                <label class="toggle">
+                  Remove background
+                  <input id="remove-bg" type="checkbox" checked />
+                  <span class="toggle__track"></span>
+                </label>
+                <p class="hint" id="bg-hint"></p>
               </div>
 
               <!-- Print quality: pixels per printed inch for the selected photo at this size. -->
@@ -333,7 +347,6 @@
               <span class="step-tile__num">01</span>
             </div>
             <h3>Upload</h3>
-            <!-- PLACEHOLDER: background removal isn't built yet (photos are printed as uploaded). -->
             <p>Drop in any photo. Our AI removes the background instantly.</p>
           </article>
           <article class="step-tile">
@@ -432,6 +445,7 @@
   <script src="js/api.js"></script>
   <script src="js/cart.js"></script>
   <script src="js/layout.js"></script>
+  <script src="js/background-removal.js"></script>
   <script src="js/studio.js"></script>
 </body>
 </html>

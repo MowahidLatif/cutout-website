@@ -44,6 +44,15 @@ test("creating orders is limited to 10 per 15 minutes per IP", async () => {
   assert.equal((await res.json()).error.code, "RATE_LIMITED");
 });
 
+test("uploads are limited to 40 per 15 minutes per IP (a photo + its cutout is two)", async () => {
+  const upload = () => fetch(`${app.url}/api/uploads`, { method: "POST", body: new FormData() });
+  // The 415 test above already used one.
+  for (let i = 0; i < 39; i++) assert.equal((await upload()).status, 400);
+  const res = await upload();
+  assert.equal(res.status, 429);
+  assert.equal((await res.json()).error.code, "RATE_LIMITED");
+});
+
 test("admin: successful requests don't count; 10 failed attempts lock the IP out", async () => {
   const get = (token) => fetch(`${app.url}/api/admin/orders`, { headers: { Authorization: `Bearer ${token}` } });
   for (let i = 0; i < 15; i++) assert.equal((await get(TOKEN)).status, 200);

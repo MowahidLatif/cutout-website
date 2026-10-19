@@ -117,19 +117,24 @@ async function decodeHeic(buffer) {
 }
 
 /**
- * Keeps the stored print file small enough to email: first as a high-quality
- * JPEG, then scaled down in steps if it's still too big.
+ * Keeps the stored print file small enough to email. Opaque images become a
+ * high-quality JPEG, scaled down in steps if needed. Transparent images
+ * (background-removed cutouts) stay PNG so the transparency survives — they
+ * only get scaled down.
  */
 async function shrinkToFit(image, first) {
-  let { width, height } = first.info;
+  const { width, height } = first.info;
+  const transparent = first.info.channels === 4 && !(await sharp(first.data).stats()).isOpaque;
   for (const scale of [1, 0.85, 0.7, 0.55, 0.4]) {
-    const result = await image
-      .clone()
-      .resize(Math.round(width * scale), Math.round(height * scale))
-      .flatten({ background: "#ffffff" })
-      .jpeg({ quality: 90, chromaSubsampling: "4:4:4" })
-      .toBuffer({ resolveWithObject: true });
-    if (result.data.length <= maxUploadBytes()) return { result, output: OUTPUTS.jpeg };
+    if (transparent && scale === 1) continue; // same PNG again would be the same size
+    const resized = image.clone().resize(Math.round(width * scale), Math.round(height * scale));
+    const result = transparent
+      ? await resized.png({ compressionLevel: 9 }).toBuffer({ resolveWithObject: true })
+      : await resized
+          .flatten({ background: "#ffffff" })
+          .jpeg({ quality: 90, chromaSubsampling: "4:4:4" })
+          .toBuffer({ resolveWithObject: true });
+    if (result.data.length <= maxUploadBytes()) return { result, output: transparent ? OUTPUTS.png : OUTPUTS.jpeg };
   }
   throw validationError(`That file is too detailed to store under ${maxUploadMb()} MB. Please try a smaller image.`);
 }
