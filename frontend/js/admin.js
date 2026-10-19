@@ -165,14 +165,14 @@
       .map(
         (o) => `
       <tr>
-        <td><code title="${escapeHtml(o.id)}">${escapeHtml(o.shortId)}</code></td>
-        <td>${escapeHtml(new Date(o.createdAt).toLocaleDateString())}</td>
-        <td>${escapeHtml(o.customerName || "—")}<br /><span class="hint">${escapeHtml(o.customerEmail)}</span></td>
-        <td>${escapeHtml(STATUS_LABELS[o.status] || o.status)}</td>
-        <td>${formatCurrency(o.totalPrice)}</td>
-        <td>${escapeHtml(o.itemCount)} <span class="hint">(${escapeHtml(o.cutoutCount)} cutouts)</span></td>
-        <td>${escapeHtml(o.country || "—")}</td>
-        <td><button type="button" class="btn btn-secondary btn-sm" data-order-id="${escapeHtml(o.id)}">Open</button></td>
+        <td data-label="Order"><code title="${escapeHtml(o.id)}">${escapeHtml(o.shortId)}</code></td>
+        <td data-label="Created">${escapeHtml(new Date(o.createdAt).toLocaleDateString())}</td>
+        <td data-label="Customer"><span>${escapeHtml(o.customerName || "—")}<br /><span class="hint">${escapeHtml(o.customerEmail)}</span></span></td>
+        <td data-label="Status">${escapeHtml(STATUS_LABELS[o.status] || o.status)}</td>
+        <td data-label="Total (CAD)">${formatCurrency(o.totalPrice)}</td>
+        <td data-label="Items"><span>${escapeHtml(o.itemCount)} <span class="hint">(${escapeHtml(o.cutoutCount)} cutouts)</span></span></td>
+        <td data-label="Country">${escapeHtml(o.country || "—")}</td>
+        <td data-label=""><button type="button" class="btn btn-secondary btn-sm" data-order-id="${escapeHtml(o.id)}">Open</button></td>
       </tr>`
       )
       .join("");
@@ -321,17 +321,17 @@
   function renderHistory(events) {
     if (!events.length) return "<p><em>No status changes recorded yet.</em></p>";
     return `
-      <div class="table-scroll"><table>
+      <div class="table-scroll"><table class="stack-on-phone">
         <thead><tr><th>When</th><th>Change</th><th>By</th><th>IP</th></tr></thead>
         <tbody>
           ${events
             .map(
               (ev) => `
             <tr>
-              <td>${escapeHtml(new Date(ev.createdAt).toLocaleString())}</td>
-              <td>${escapeHtml(ev.fromStatus || "—")} → ${escapeHtml(ev.toStatus)}</td>
-              <td title="${escapeHtml(ev.userAgent || "")}">${escapeHtml(ev.changedBy)}</td>
-              <td>${escapeHtml(ev.ip || "—")}</td>
+              <td data-label="When">${escapeHtml(new Date(ev.createdAt).toLocaleString())}</td>
+              <td data-label="Change">${escapeHtml(ev.fromStatus || "—")} → ${escapeHtml(ev.toStatus)}</td>
+              <td data-label="By" title="${escapeHtml(ev.userAgent || "")}">${escapeHtml(ev.changedBy)}</td>
+              <td data-label="IP">${escapeHtml(ev.ip || "—")}</td>
             </tr>`
             )
             .join("")}

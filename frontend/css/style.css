@@ -1224,7 +1224,9 @@ p.lead {
 }
 
 .unit-input input {
+  flex: none;
   width: 3.2rem;
+  min-width: 3.2rem;
   border: 0 !important;
   background: transparent !important;
   padding: 0.3rem 0 !important;
@@ -1386,12 +1388,15 @@ p.lead {
 /* Material options (radio cards) */
 .option-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr); /* cards shrink to the column, not their content */
   gap: 0.75rem;
 }
 
 .option-card {
   position: relative;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1rem;
   padding: 1rem 1.25rem;
@@ -2051,11 +2056,13 @@ tr:last-child td {
 
 .checkout__main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.5rem;
 }
 
 .cart-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -2380,5 +2387,207 @@ tr:last-child td {
   *::before,
   *::after {
     transition: none !important;
+  }
+}
+
+/* =====================================================================
+   Touch screens & small screens
+   ===================================================================== */
+
+/* No 300ms double-tap delay, and a softer tap flash. */
+a,
+button,
+summary,
+label,
+select,
+input {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(217, 87, 43, 0.15);
+}
+
+/* Notched phones: keep the header clear of the notch / rounded corners. */
+.site-header__inner {
+  padding-left: max(var(--gutter), env(safe-area-inset-left));
+  padding-right: max(var(--gutter), env(safe-area-inset-right));
+}
+
+/* Phones and tablets (finger, not mouse): every tap target at least 44px. */
+@media (pointer: coarse) {
+  .site-nav a,
+  .site-footer nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .brand {
+    min-height: 44px;
+  }
+
+  .btn,
+  .btn-sm,
+  .segmented button,
+  .stepper button,
+  .icon-btn,
+  .nav-toggle {
+    min-height: 44px;
+  }
+
+  .icon-btn,
+  .stepper button,
+  .nav-toggle {
+    min-width: 44px;
+  }
+
+  select {
+    min-height: 44px;
+  }
+
+  .unit-input input {
+    min-height: 44px;
+  }
+
+  .cart-pill {
+    min-height: 44px;
+  }
+
+  .tray-card__remove {
+    width: 40px;
+    height: 40px;
+    top: 0.8rem;
+    right: 0.8rem;
+  }
+
+  .sample-link,
+  .link-accent,
+  .explainer summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .sample-link {
+    display: flex;
+  }
+
+  /* Toggles: the whole label is the target. */
+  .toggle {
+    min-height: 44px;
+  }
+
+  .consent input {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Bigger slider thumb and hit area. */
+  .range {
+    height: 44px;
+  }
+
+  .range::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+    margin-top: -11px;
+  }
+
+  .range::-moz-range-thumb {
+    width: 26px;
+    height: 26px;
+  }
+
+  /* Room between neighbouring small buttons so a thumb doesn't hit two. */
+  .admin-actions,
+  .item-link {
+    gap: 0.75rem;
+  }
+
+  .item-link {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+}
+
+/* Phones: speech bubbles stay inside the standee; admin tables become cards. */
+@media (max-width: 719px) {
+  .stage-text--bubble {
+    right: 2%;
+    max-width: 90%;
+  }
+
+  .option-card .chip {
+    margin-left: calc(26px + 1rem); /* line up under the title when it wraps */
+  }
+
+  #order-detail h2 {
+    font-size: 1.25rem;
+    overflow-wrap: anywhere;
+  }
+
+  /* Tables marked .stack-on-phone read as one card per row. */
+  table.stack-on-phone thead {
+    display: none;
+  }
+
+  table.stack-on-phone,
+  table.stack-on-phone tbody,
+  table.stack-on-phone tr,
+  table.stack-on-phone td {
+    display: block;
+    width: 100%;
+  }
+
+  table.stack-on-phone {
+    border: 0;
+    background: transparent;
+  }
+
+  table.stack-on-phone tr {
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  table.stack-on-phone td {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+  }
+
+  table.stack-on-phone td:last-child {
+    border-bottom: 0;
+  }
+
+  table.stack-on-phone td::before {
+    content: attr(data-label);
+    flex: none;
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-align: left;
+  }
+
+  table.stack-on-phone td[data-label=""]::before {
+    content: none;
+  }
+
+  table.stack-on-phone td[data-label=""] {
+    justify-content: flex-end;
+  }
+}
+
+/* Phones held sideways: keep the studio preview within the screen. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .stage {
+    height: max(300px, 80vh);
+  }
+
+  .hero {
+    padding-top: 1.5rem;
   }
 }

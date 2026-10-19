@@ -121,9 +121,32 @@ total, pricing page, admin).
 | 720–1023px (tablet) | The same two-column hero and studio, scaled down (`clamp()` type); 4-up grids become 2×2 |
 | < 720px (mobile) | Everything stacks into one column; the hero image moves below the copy, the studio preview sits above its controls, and the nav collapses into a menu button |
 
-There's no horizontal scrolling at any width; this was checked at 1440,
-820 and 390px. `prefers-reduced-motion` turns off smooth scrolling and
-transitions.
+Phones and tablets are checked with an automated audit (real app, touch
+emulation) at 320, 375, 390, 768, 820, 1024 and 1366×1024, plus a landscape
+phone (844×390), across every page and the filled states (studio with
+photos and text, a cart, admin list and detail). It checks for:
+- no horizontal scrolling and nothing off-screen
+- every tap target ≥ 44px
+- inputs ≥ 16px, so iPhones don't zoom in on focus
+
+**Touch rules** (the end of `style.css`):
+- `@media (pointer: coarse)` gives phones and tablets (not desktop mice)
+  44px tap targets: nav and footer links, small buttons, selects, steppers,
+  the photo-card remove button, the slider thumb, and the "Try a sample" /
+  "Remove" links.
+- Below 720px:
+  - speech bubbles stay inside the standee preview
+  - tables marked `.stack-on-phone` (the admin orders and history tables)
+    turn into one labelled card per row, using `data-label` on each cell
+- Phones held sideways (`max-height: 500px`) get a shorter studio preview
+  that fits the screen.
+- Also: `touch-action: manipulation` (no double-tap delay), and
+  safe-area padding for notched phones (`viewport-fit=cover`).
+
+Grids that hold wide content use `minmax(0, 1fr)` columns so their content
+can't widen the page.
+
+`prefers-reduced-motion` turns off smooth scrolling and transitions.
 
 ## `api.js`: talking to the backend
 
