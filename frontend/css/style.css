@@ -1113,6 +1113,22 @@ p.lead {
   color: var(--error);
 }
 
+.explainer {
+  margin-top: 0.75rem;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+}
+
+.explainer summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.explainer p {
+  margin: 0.6rem 0 0;
+}
+
 .quality .hint {
   margin: 0.5rem 0 0;
 }
@@ -1843,6 +1859,8 @@ input[type="email"],
 input[type="tel"],
 input[type="number"],
 input[type="password"],
+input[type="date"],
+textarea,
 select {
   width: 100%;
   padding: 0.75rem 0.9rem;
@@ -1949,6 +1967,78 @@ tr:last-child td {
   color: var(--accent-dark);
   font-weight: 600;
   font-size: 0.9rem;
+}
+
+/* ---------- Admin ---------- */
+.admin-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.admin-filters__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.admin-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 2rem;
+}
+
+.admin-grid dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.admin-grid dd {
+  margin: 0 0 0.6rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 1rem 0;
+}
+
+.note {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  margin-bottom: 0.6rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.status-message.warning {
+  background: #fdf1d8;
+  color: #8a5a00;
+}
+
+@media (max-width: 1023px) {
+  .admin-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 719px) {
+  .admin-filters,
+  .admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ---------- Checkout ---------- */

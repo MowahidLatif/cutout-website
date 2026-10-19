@@ -57,15 +57,21 @@
 
         <fieldset>
           <legend>Contact</legend>
+          <div class="field" style="margin-bottom:1.25rem">
+            <label for="customer-name">Full name</label>
+            <input id="customer-name" type="text" autocomplete="name" maxlength="100" required />
+            <span class="hint">The name for the shipping label.</span>
+            <span class="error">Enter your full name.</span>
+          </div>
           <div class="form-row cols-2">
             <div class="field">
               <label for="email">Email</label>
-              <input id="email" type="email" autocomplete="email" required />
+              <input id="email" type="email" autocomplete="email" maxlength="254" required />
               <span class="error">Enter a valid email address.</span>
             </div>
             <div class="field">
               <label for="phone">Phone</label>
-              <input id="phone" type="tel" autocomplete="tel" required />
+              <input id="phone" type="tel" autocomplete="tel" maxlength="30" required />
               <span class="error">Enter a phone number.</span>
             </div>
           </div>
@@ -89,28 +95,28 @@
             <div class="form-row cols-2">
               <div class="field">
                 <label for="line1">Address line 1</label>
-                <input id="line1" type="text" autocomplete="address-line1" required />
+                <input id="line1" type="text" autocomplete="address-line1" maxlength="200" required />
                 <span class="error">Enter your street address.</span>
               </div>
               <div class="field">
                 <label for="line2">Address line 2 (optional)</label>
-                <input id="line2" type="text" autocomplete="address-line2" />
+                <input id="line2" type="text" autocomplete="address-line2" maxlength="200" />
               </div>
             </div>
             <div class="form-row cols-3">
               <div class="field">
                 <label for="city">City</label>
-                <input id="city" type="text" autocomplete="address-level2" required />
+                <input id="city" type="text" autocomplete="address-level2" maxlength="200" required />
                 <span class="error">Enter your city.</span>
               </div>
               <div class="field">
                 <label for="region">Province / State</label>
-                <input id="region" type="text" autocomplete="address-level1" required />
+                <input id="region" type="text" autocomplete="address-level1" maxlength="200" required />
                 <span class="error">Enter your province or state.</span>
               </div>
               <div class="field">
                 <label for="postal-code">Postal / ZIP code</label>
-                <input id="postal-code" type="text" autocomplete="postal-code" required />
+                <input id="postal-code" type="text" autocomplete="postal-code" maxlength="20" required />
                 <span class="error">Enter your postal/ZIP code.</span>
               </div>
             </div>

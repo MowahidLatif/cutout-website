@@ -21,6 +21,7 @@
   const consentEl = $("final-sale-consent");
 
   const fields = {
+    name: $("customer-name"),
     email: $("email"),
     phone: $("phone"),
     country: $("country"),
@@ -221,7 +222,7 @@
 
   function validate() {
     let valid = true;
-    const required = [fields.email, fields.phone, fields.country, fields.line1, fields.city, fields.region, fields.postalCode];
+    const required = [fields.name, fields.email, fields.phone, fields.country, fields.line1, fields.city, fields.region, fields.postalCode];
     required.forEach((el) => {
       const ok = (el.value || "").trim().length > 0;
       setFieldError(el, !ok);
@@ -261,6 +262,7 @@
     submitBtn.textContent = "Processing…";
     try {
       const order = await Api.post("/orders", {
+        customerName: fields.name.value.trim(),
         customerEmail: fields.email.value.trim(),
         customerPhone: fields.phone.value.trim(),
         shippingAddress: {

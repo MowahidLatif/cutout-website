@@ -141,16 +141,18 @@ function createDownloadUrl(key, { ttlSeconds, relative = false } = {}) {
  * @returns {Promise<{ width: number, height: number }>}
  */
 async function readImageSize(key) {
+  const { width, height } = await sharp(await readFile(key)).metadata();
+  return { width, height };
+}
+
+/** The stored file's bytes (for the admin's supplier bundle). */
+async function readFile(key) {
   assertValidKey(key);
-  let input;
   if (driver() === "s3") {
     const obj = await getS3Client().send(new GetObjectCommand({ Bucket: s3Bucket(), Key: s3Key(key) }));
-    input = Buffer.from(await obj.Body.transformToByteArray());
-  } else {
-    input = path.join(uploadDir(), key);
+    return Buffer.from(await obj.Body.transformToByteArray());
   }
-  const { width, height } = await sharp(input).metadata();
-  return { width, height };
+  return fs.readFile(path.join(uploadDir(), key));
 }
 
 function verifyDownloadSignature(key, exp, sig) {
@@ -169,5 +171,6 @@ module.exports = {
   sendFile,
   createDownloadUrl,
   readImageSize,
+  readFile,
   verifyDownloadSignature,
 };

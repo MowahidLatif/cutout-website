@@ -9,28 +9,38 @@ function round2(n) {
 }
 
 /**
- * Print quality: how many of the photo's pixels land on each printed inch.
- * Standees are seen from a few feet away, so these are lower than paper
- * print standards. Identical copy in frontend/js/pricing.js.
+ * Print quality: how many of the photo's pixels land on each printed inch,
+ * turned into a 0–100 score. Standees are seen from a few feet away, so a
+ * full score needs 50 ppi (paper prints need far more).
  *
- *   great ≥ 50 ppi · good ≥ 30 · fair ≥ 18 · low below that
+ *   score = min(100, ppi × 2), capped at 59 ("fair" at best) when the photo
+ *   is under 1000 px on its long side — small images (screenshots, chat
+ *   apps) rarely print well, whatever the size.
+ *   grade:  great ≥ 90 · good ≥ 60 · fair ≥ 36 · low below
+ *
+ * Identical copy in frontend/js/pricing.js (a test keeps them in step).
  *
  * @param {Object} params
  * @param {number} params.widthPx  stored image width in pixels
  * @param {number} params.heightPx stored image height in pixels
  * @param {number} params.heightIn printed height in inches
  * @param {number|null} [params.widthIn] printed width; defaults to the photo's proportions
- * @returns {{ ppi: number, grade: "great"|"good"|"fair"|"low" }}
+ * @returns {{ ppi: number, score: number, grade: "great"|"good"|"fair"|"low" }}
  */
 function printQuality({ widthPx, heightPx, heightIn, widthIn }) {
   const printedWidth = widthIn || (heightIn * widthPx) / heightPx;
   const ppi = Math.round(Math.min(widthPx / printedWidth, heightPx / heightIn));
-  return { ppi, grade: qualityGrade(ppi) };
+  let score = Math.min(100, ppi * 2);
+  if (Math.max(widthPx, heightPx) < SMALL_IMAGE_PX) score = Math.min(score, 59);
+  return { ppi, score, grade: qualityGrade(score) };
 }
 
+/** Photos smaller than this on their long side can't score above "fair". */
+const SMALL_IMAGE_PX = 1000;
+
 /** @returns {"great"|"good"|"fair"|"low"} */
-function qualityGrade(ppi) {
-  return ppi >= 50 ? "great" : ppi >= 30 ? "good" : ppi >= 18 ? "fair" : "low";
+function qualityGrade(score) {
+  return score >= 90 ? "great" : score >= 60 ? "good" : score >= 36 ? "fair" : "low";
 }
 
 /** Every price in the database, and every Stripe charge, is in this currency. */

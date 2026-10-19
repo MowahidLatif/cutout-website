@@ -6,27 +6,29 @@ const { SRC, loadFrontend } = require("./helpers");
 const backend = require(path.join(SRC, "services/pricing"));
 const frontend = loadFrontend("js/pricing.js").Pricing;
 
-test("the reported example: 588×900 at 6 ft is low quality", () => {
-  assert.deepEqual(backend.printQuality({ widthPx: 588, heightPx: 900, heightIn: 72 }), { ppi: 13, grade: "low" });
+test("the reported example: 588×900 at 6 ft scores low", () => {
+  assert.deepEqual(backend.printQuality({ widthPx: 588, heightPx: 900, heightIn: 72 }), { ppi: 13, score: 26, grade: "low" });
 });
 
-test("a modern phone photo at 6 ft is great", () => {
-  assert.equal(backend.printQuality({ widthPx: 3024, heightPx: 4032, heightIn: 72 }).grade, "great");
+test("images under 1000 px can't score above fair, whatever the size", () => {
+  const q = backend.printQuality({ widthPx: 588, heightPx: 900, heightIn: 24 }); // 38 ppi would be "good"
+  assert.equal(q.score, 59);
+  assert.equal(q.grade, "fair");
 });
 
-test("grade boundaries", () => {
-  assert.equal(backend.qualityGrade(50), "great");
-  assert.equal(backend.qualityGrade(49), "good");
-  assert.equal(backend.qualityGrade(30), "good");
-  assert.equal(backend.qualityGrade(29), "fair");
-  assert.equal(backend.qualityGrade(18), "fair");
-  assert.equal(backend.qualityGrade(17), "low");
+test("a modern phone photo at 6 ft scores great", () => {
+  const q = backend.printQuality({ widthPx: 3024, heightPx: 4032, heightIn: 72 });
+  assert.equal(q.score, 100);
+  assert.equal(q.grade, "great");
 });
 
-test("a stretched (unlocked) width lowers quality along that axis", () => {
-  const natural = backend.printQuality({ widthPx: 3000, heightPx: 4000, heightIn: 72 });
-  const stretched = backend.printQuality({ widthPx: 3000, heightPx: 4000, heightIn: 72, widthIn: 96 });
-  assert.ok(stretched.ppi < natural.ppi);
+test("grade boundaries (by score)", () => {
+  assert.equal(backend.qualityGrade(90), "great");
+  assert.equal(backend.qualityGrade(89), "good");
+  assert.equal(backend.qualityGrade(60), "good");
+  assert.equal(backend.qualityGrade(59), "fair");
+  assert.equal(backend.qualityGrade(36), "fair");
+  assert.equal(backend.qualityGrade(35), "low");
 });
 
 test("browser and server agree on 5,000 random photos and sizes", () => {

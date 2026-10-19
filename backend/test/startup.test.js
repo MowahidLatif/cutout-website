@@ -14,6 +14,8 @@ const GOOD = {
   FILE_LINK_SECRET: SECRET_B,
   FULFILLMENT_EMAIL: "orders@shop.example.com",
   SITE_URL: "https://shop.example.com",
+  STRIPE_WEBHOOK_SECRET: "whsec_test_secret",
+  DATABASE_URL: "postgres://user:pass@localhost:5432/cutout_website",
   HOST: "127.0.0.1",
   PORT: "0",
 };
@@ -51,7 +53,7 @@ test("starts with a complete production configuration", async () => {
   assert.ok(r.started, r.output);
 });
 
-for (const key of ["FULFILLMENT_EMAIL", "ADMIN_TOKEN", "FILE_LINK_SECRET", "SITE_URL"]) {
+for (const key of ["FULFILLMENT_EMAIL", "ADMIN_TOKEN", "FILE_LINK_SECRET", "SITE_URL", "STRIPE_WEBHOOK_SECRET", "DATABASE_URL"]) {
   test(`refuses to start in production without ${key}`, async () => {
     const r = await start(without(key));
     assert.equal(r.started, false);

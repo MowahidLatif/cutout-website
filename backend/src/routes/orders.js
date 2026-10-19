@@ -2,7 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const ordersService = require("../services/orders");
 const { createCheckoutSession } = require("../services/stripe");
-const { processUpload, maxUploadBytes } = require("../services/uploads");
+const { processUpload, maxUploadBytes, maxUploadMb } = require("../services/uploads");
 const { ok, fail } = require("./_respond");
 
 const router = express.Router();
@@ -67,11 +67,12 @@ router.post("/uploads", (req, res) => {
       if (parseErr) {
         const message =
           parseErr.code === "LIMIT_FILE_SIZE"
-            ? `That file is too large. The maximum is ${process.env.UPLOAD_MAX_MB || 25} MB.`
+            ? `That file is too large. The maximum is ${maxUploadMb()} MB (the most that can still be emailed to our printer).`
             : parseErr.code === "LIMIT_UNEXPECTED_FILE" || parseErr.code === "LIMIT_FILE_COUNT"
               ? fieldHint
               : `Upload failed: ${parseErr.message}`;
-        throw Object.assign(new Error(message), { code: "VALIDATION_ERROR" });
+        const code = parseErr.code === "LIMIT_FILE_SIZE" ? "PAYLOAD_TOO_LARGE" : "VALIDATION_ERROR";
+        throw Object.assign(new Error(message), { code });
       }
       if (!req.file) {
         throw Object.assign(new Error(fieldHint), { code: "VALIDATION_ERROR" });

@@ -1,44 +1,23 @@
 /**
  * Internal/admin endpoints for the manual fulfillment workflow, used by
  * frontend/admin.html. Gated by one shared secret (a single operator, no
- * accounts): every request needs an `X-Admin-Token` header matching
- * ADMIN_TOKEN. Failed attempts are rate-limited per IP, and in production
+ * accounts): every request needs `Authorization: Bearer <ADMIN_TOKEN>`.
+ * Failed attempts are rate-limited per IP (security.js), and in production
  * the token is only accepted over HTTPS. See docs/api-spec.md.
  */
 const express = require("express");
 const crypto = require("crypto");
+const { ZipArchive } = require("archiver");
 const ordersService = require("../services/orders");
-const { createDownloadUrl, isValidKey } = require("../services/storage");
+const storage = require("../services/storage");
 const { sendShippedNotification } = require("../services/email");
-const { ok, fail } = require("./_respond");
+const { MATERIAL_LABELS, TIER_LABELS, TEXT_STYLE_LABELS, formatFeetInches, plural } = require("../services/catalog");
+const { clientIp } = require("../security");
+const { ok, fail, appError } = require("./_respond");
 
 const DEV_ADMIN_TOKEN = "dev-admin-token";
 
 const router = express.Router();
-
-// ---------- Failed-attempt rate limit ----------
-// In memory: fine for one server process; a restart resets the counters.
-const MAX_FAILED_ATTEMPTS = 10;
-const FAILURE_WINDOW_MS = 15 * 60 * 1000;
-const failuresByIp = new Map(); // ip -> { count, windowStart }
-
-function currentFailures(ip, now) {
-  for (const [key, entry] of failuresByIp) {
-    if (now - entry.windowStart >= FAILURE_WINDOW_MS) failuresByIp.delete(key);
-  }
-  return failuresByIp.get(ip);
-}
-
-function recordFailure(ip, now) {
-  const entry = failuresByIp.get(ip) || { count: 0, windowStart: now };
-  entry.count += 1;
-  failuresByIp.set(ip, entry);
-  return entry.count;
-}
-
-function adminError(message, code) {
-  return Object.assign(new Error(message), { code });
-}
 
 /** Hashing both sides first makes the comparison constant-time regardless of length. */
 function tokenMatches(given) {
@@ -49,64 +28,61 @@ function tokenMatches(given) {
 
 function requireAdmin(req, res, next) {
   if (process.env.NODE_ENV === "production" && !req.secure) {
-    return fail(res, adminError("Admin requires HTTPS.", "FORBIDDEN"));
+    return fail(res, appError("Admin requires HTTPS.", "FORBIDDEN"));
   }
   if ("token" in req.query || "admin_token" in req.query || "adminToken" in req.query) {
     // Tokens in URLs end up in logs and browser history.
-    return fail(
-      res,
-      adminError("Send the admin token in the X-Admin-Token header, never in the URL.", "VALIDATION_ERROR")
-    );
+    return fail(res, appError("Send the admin token in the Authorization header, never in the URL.", "VALIDATION_ERROR"));
   }
-
-  const now = Date.now();
-  const failures = currentFailures(req.ip, now);
-  if (failures && failures.count >= MAX_FAILED_ATTEMPTS) {
-    // Blocked even with the right token, so a lucky guess past the limit isn't confirmed.
-    const retryAfterSec = Math.ceil((failures.windowStart + FAILURE_WINDOW_MS - now) / 1000);
-    res.set("Retry-After", String(retryAfterSec));
-    return fail(res, adminError("Too many failed attempts. Try again later.", "RATE_LIMITED"));
-  }
-
-  if (tokenMatches(req.get("X-Admin-Token") || "")) {
+  const match = /^Bearer (.+)$/.exec(req.get("Authorization") || "");
+  if (match && tokenMatches(match[1].trim())) {
     return next();
   }
-
-  const count = recordFailure(req.ip, now);
-  console.warn(`[admin] failed auth from ${req.ip} (${count}/${MAX_FAILED_ATTEMPTS})`);
-  fail(res, adminError("Admin token missing or wrong.", "UNAUTHORIZED"));
+  // The 401 counts toward the failed-attempt limit (security.js).
+  console.warn(`[admin] failed auth from ${clientIp(req)}`);
+  fail(res, appError("Admin token missing or wrong.", "UNAUTHORIZED"));
 }
 
 /** Who made an admin change: self-declared name (shared secret, so not proven) + IP + UA. */
 function actorFrom(req) {
   const name = (req.get("X-Admin-Name") || "").trim().slice(0, 80) || "admin";
-  return { name, ip: req.ip, userAgent: (req.get("User-Agent") || "").slice(0, 300) };
+  return { name, ip: clientIp(req), userAgent: (req.get("User-Agent") || "").slice(0, 300) };
 }
 
 function itemDownloadLinks(order) {
   return order.items.map((item) => ({
     itemId: item.id,
     // Orders from before 003_image_key.sql hold a URL, not a key — no link for those.
-    ...(isValidKey(item.imageKey) ? createDownloadUrl(item.imageKey) : { url: null, expiresAt: null }),
+    ...(storage.isValidKey(item.imageKey) ? storage.createDownloadUrl(item.imageKey) : { url: null, expiresAt: null }),
   }));
 }
 
-router.use("/admin", requireAdmin);
-
-router.get("/admin/orders", async (req, res) => {
+/** Wraps an async handler so thrown errors become JSON responses. */
+const handle = (fn) => async (req, res) => {
   try {
-    const orders = await ordersService.listOrders({ status: req.query.status });
-    ok(res, orders);
+    await fn(req, res);
   } catch (err) {
     fail(res, err);
   }
-});
+};
 
-router.get("/admin/orders/:id", async (req, res) => {
-  try {
-    const [order, statusEvents] = await Promise.all([
+router.use("/admin", requireAdmin);
+
+router.get(
+  "/admin/orders",
+  handle(async (req, res) => {
+    const { status, q, from, to, page } = req.query;
+    ok(res, await ordersService.listOrders({ status: status || "needs_action", q, from, to, page }));
+  })
+);
+
+router.get(
+  "/admin/orders/:id",
+  handle(async (req, res) => {
+    const [order, statusEvents, notes] = await Promise.all([
       ordersService.getOrderById(req.params.id),
       ordersService.getStatusEvents(req.params.id),
+      ordersService.getNotes(req.params.id),
     ]);
     const links = itemDownloadLinks(order);
     order.items = order.items.map((item, i) => ({
@@ -114,35 +90,122 @@ router.get("/admin/orders/:id", async (req, res) => {
       downloadUrl: links[i].url,
       downloadExpiresAt: links[i].expiresAt,
     }));
-    ok(res, { ...order, statusEvents });
-  } catch (err) {
-    fail(res, err);
-  }
-});
+    ok(res, { ...order, statusEvents, notes, allowedNextStatuses: ordersService.allowedNextStatuses(order.status) });
+  })
+);
 
-router.post("/admin/orders/:id/download-links", async (req, res) => {
-  try {
+router.post(
+  "/admin/orders/:id/download-links",
+  handle(async (req, res) => {
     const order = await ordersService.getOrderById(req.params.id);
     ok(res, itemDownloadLinks(order));
-  } catch (err) {
-    fail(res, err);
-  }
-});
+  })
+);
 
-router.patch("/admin/orders/:id/status", async (req, res) => {
-  try {
-    const { status } = req.body;
+router.post(
+  "/admin/orders/:id/notes",
+  handle(async (req, res) => {
+    const notes = await ordersService.addNote(req.params.id, req.body && req.body.body, actorFrom(req).name);
+    ok(res, notes, 201);
+  })
+);
+
+router.patch(
+  "/admin/orders/:id/status",
+  handle(async (req, res) => {
+    const { status, carrier, trackingNumber, trackingUrl } = req.body || {};
     const actor = actorFrom(req);
-    const { order, fromStatus } = await ordersService.updateOrderStatus(req.params.id, status, actor);
+    const { order, fromStatus } = await ordersService.updateOrderStatus(req.params.id, status, actor, {
+      carrier,
+      trackingNumber,
+      trackingUrl,
+    });
     console.log(`[admin] ${actor.name}@${actor.ip} changed order ${order.id} ${fromStatus} → ${status}`);
+
+    // The status change is already saved; a failed email must not undo it.
+    let warning = null;
     if (status === "shipped") {
-      await sendShippedNotification(order);
+      try {
+        await sendShippedNotification(order);
+      } catch (err) {
+        console.error(`[admin] shipped email for order ${order.id} failed:`, err);
+        warning = `Status saved, but the shipped email to ${order.customerEmail} failed to send: ${err.message}`;
+      }
     }
-    ok(res, order);
-  } catch (err) {
-    fail(res, err);
-  }
-});
+    ok(res, { ...order, warning });
+  })
+);
+
+// ---------- Supplier bundle: one zip with the print files + order details ----------
+function orderDetailsText(order) {
+  const addr = order.shippingAddress || {};
+  const cutouts = order.items.reduce((n, i) => n + i.quantity, 0);
+  const lines = [
+    `Order ${order.id}`,
+    `Placed: ${new Date(order.createdAt).toISOString().slice(0, 10)}`,
+    "",
+    "SHIP TO",
+    order.customerName || "(no name on order)",
+    addr.line1,
+    addr.line2,
+    `${addr.city}, ${addr.region} ${addr.postalCode}`,
+    addr.country,
+    `Phone: ${order.customerPhone}`,
+    `Email: ${order.customerEmail}`,
+    "",
+    `ITEMS (${plural(cutouts, "cutout")}, ${plural(order.items.length, "design")})`,
+  ].filter((line) => line !== undefined && line !== null);
+  order.items.forEach((item, index) => {
+    const size = item.widthIn
+      ? `${formatFeetInches(item.heightIn)} tall × ${formatFeetInches(item.widthIn)} wide`
+      : `${formatFeetInches(item.heightIn)} tall`;
+    lines.push(
+      "",
+      `Item ${index + 1}: ${bundleImageName(order, item, index)}`,
+      `  Quantity: ${item.quantity}`,
+      `  Material: ${MATERIAL_LABELS[item.material] || item.material}`,
+      `  Size: ${TIER_LABELS[item.sizeTier] || item.sizeTier}, ${size}`
+    );
+    for (const el of item.textElements || []) {
+      lines.push(`  ${TEXT_STYLE_LABELS[el.style] || el.style}: "${el.text}"`);
+    }
+    if (item.imageWidthPx) {
+      lines.push(`  Image: ${item.imageWidthPx} × ${item.imageHeightPx} px` + (item.printScore != null ? `, print quality ${item.printScore}/100` : ""));
+    }
+  });
+  return lines.join("\n") + "\n";
+}
+
+function bundleImageName(order, item, index) {
+  const ext = (item.imageKey || "").split(".").pop();
+  return `${order.id}-item-${index + 1}.${ext}`;
+}
+
+router.get(
+  "/admin/orders/:id/bundle",
+  handle(async (req, res) => {
+    const order = await ordersService.getOrderById(req.params.id);
+    // Read every image first, so a missing file is a clean error rather than a broken zip.
+    const images = [];
+    for (const [index, item] of order.items.entries()) {
+      if (!storage.isValidKey(item.imageKey)) continue; // pre-003 orders
+      images.push({ name: bundleImageName(order, item, index), data: await storage.readFile(item.imageKey) });
+    }
+
+    res.set("Content-Type", "application/zip");
+    res.set("Content-Disposition", `attachment; filename="${order.id}-supplier-bundle.zip"`);
+    res.set("Cache-Control", "no-store");
+    const zip = new ZipArchive({ zlib: { level: 6 } });
+    zip.on("error", (err) => {
+      console.error(`[admin] bundle for order ${order.id} failed:`, err);
+      res.destroy(err);
+    });
+    zip.pipe(res);
+    zip.append(orderDetailsText(order), { name: `${order.id}-order-details.txt` });
+    for (const image of images) zip.append(image.data, { name: image.name });
+    await zip.finalize();
+  })
+);
 
 module.exports = router;
 module.exports.DEV_ADMIN_TOKEN = DEV_ADMIN_TOKEN;

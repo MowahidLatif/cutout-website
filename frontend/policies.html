@@ -107,14 +107,6 @@
   <script src="js/site-config.js"></script>
   <script src="js/cart.js"></script>
   <script src="js/layout.js"></script>
-  <script>
-    // Contact details and policy numbers come from js/site-config.js.
-    document.querySelectorAll("[data-support-email]").forEach((a) => {
-      a.textContent = SITE.supportEmail;
-      a.href = "mailto:" + SITE.supportEmail;
-    });
-    document.querySelectorAll("[data-damage-days]").forEach((el) => (el.textContent = SITE.damageClaimDays));
-    document.querySelectorAll("[data-policy-version]").forEach((el) => (el.textContent = SITE.policyVersion));
-  </script>
+  <script src="js/policies.js"></script>
 </body>
 </html>

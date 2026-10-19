@@ -72,9 +72,10 @@ function formatItem(item, index) {
     lines.push(`   ${TEXT_STYLE_LABELS[el.style] || el.style}: "${el.text}"`);
   }
   if (item.printPpi) {
-    const grade = qualityGrade(item.printPpi);
+    // Older rows have no stored score; derive it from the ppi.
+    const score = item.printScore ?? Math.min(100, item.printPpi * 2);
     lines.push(
-      `   Print quality: ${QUALITY_LABELS[grade]} (${item.printPpi} pixels per inch)` +
+      `   Print quality: ${QUALITY_LABELS[qualityGrade(score)]} — ${score}/100 (${item.printPpi} pixels per inch)` +
         (item.lowQualityAccepted ? " — customer accepted low quality" : "")
     );
   }
@@ -90,7 +91,7 @@ function formatOrderDetails(order) {
   const addr = order.shippingAddress;
   return [
     `Order ID: ${order.id}`,
-    `Customer: ${order.customerEmail} / ${order.customerPhone}`,
+    `Customer: ${order.customerName ? order.customerName + " — " : ""}${order.customerEmail} / ${order.customerPhone}`,
     `Shipping to: ${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}, ${addr.city}, ${addr.region} ${addr.postalCode}, ${addr.country}`,
     "",
     `Items (${plural(cutouts, "cutout")}, ${plural(order.items.length, "design")}):`,
@@ -130,10 +131,18 @@ function buildCustomerConfirmation(order) {
 }
 
 function buildShippedNotification(order) {
+  const tracking = [
+    order.carrier ? `Carrier: ${order.carrier}` : null,
+    order.trackingNumber ? `Tracking number: ${order.trackingNumber}` : null,
+    order.trackingUrl ? `Track your package: ${order.trackingUrl}` : null,
+  ].filter(Boolean);
   return {
     to: order.customerEmail,
     subject: "Your cutout has shipped!",
-    body: `Good news — order ${order.id} is on its way.\n\nTrack its status: ${statusLink(order)}`,
+    body:
+      `Good news${order.customerName ? ", " + order.customerName : ""} — order ${order.id} is on its way.\n\n` +
+      (tracking.length ? tracking.join("\n") + "\n\n" : "") +
+      `Order status: ${statusLink(order)}`,
   };
 }
 

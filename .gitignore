@@ -6,3 +6,4 @@ backend/storage/
 
 # Personal command cheat sheet (local only)
 COMMANDS.local.md
+.env.test

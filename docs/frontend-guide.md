@@ -29,6 +29,8 @@ frontend/
 ├── admin.html           — owner-only: orders, supplier image links, status
 │                          changes + history (not in the site nav; noindex)
 ├── policies.html        — returns & refunds: final sale, free reprint if damaged
+│                          (page scripts are files, e.g. js/pricing-page.js,
+│                           js/policies.js — the CSP forbids inline <script>)
 ├── create.html          — redirect to index.html#studio (keeps old links working)
 ├── favicon.svg          — site icon (/favicon.ico redirects here)
 ├── css/
@@ -126,7 +128,12 @@ transitions.
 ## `api.js`: talking to the backend
 
 `window.Api` has `get(path, headers?)`, `post(path, data, headers?)`,
-`patch(path, data, headers?)` and `upload(path, formData, headers?)`.
+`patch(path, data, headers?)`, `upload(path, formData, headers?)` and
+`download(path, headers?)` (returns `{ blob, filename }`, used for the admin
+zip).
+
+**No inline scripts:** the Content-Security-Policy blocks them, so page
+logic always lives in `js/*.js` files.
 
 - Calls go to same-origin `/api`, both locally (http://localhost:4000)
   and in production behind Caddy. `window.API_BASE_URL` remains as an
@@ -168,22 +175,23 @@ limits) and `makeThumbnail(src)`.
    - **Upload (multi-photo):**
      - Choose or drop **several photos at once** (the input has `multiple`).
        Each becomes a *design* in `state.designs` and uploads to
-       `POST /api/uploads` straight away. Files over 25 MB are rejected in
+       `POST /api/uploads` straight away. Files over 18 MB (`SITE.maxUploadMb`) are rejected in
        the browser first.
      - **Photo tray:** one card per photo, with a thumbnail, its upload
        status (or the server's rejection reason), a **quantity dropdown**,
        and remove. Click a card to edit that photo; the size, text and
        material controls and the preview all follow the selected photo.
      - An "Add photos" tile shows how many more are allowed.
-   - **Any photo or PDF.** The picker accepts `image/*`, `.heic` and
-     PDFs. Browsers can't display PDF or HEIC, so those show
+   - **JPEG, PNG, WebP, HEIC or PDF**, up to 18 MB (others get the server's
+     415 message). Browsers can't display PDF or HEIC, so those show
      "Processing…" until the upload returns `previewUrl`. For every photo,
      the studio then switches to the server's processed image, which is
      rotated and is exactly what will print.
    - **Print quality:** once the server reports the pixel size, each tray
-     card and the size card show a grade from `Pricing.printQuality` (Great
-     / Good / Fair / Low, in pixels per inch), live as the height changes,
-     with a tip. **Low** shows a required checkbox ("I understand this
+     card and the size card show **"Quality 84/100 · Good"** from
+     `Pricing.printQuality`, updated live as the height changes. There's a
+     tip, and a **"Why does resolution matter?"** explainer. Photos under
+     1000 px can't score above Fair. **Low** shows a required checkbox ("I understand this
      photo may print blurry…"). Add to cart is blocked until it's ticked,
      and the cart item carries `acceptedLowQuality`.
    - **Order limits:** at most `SITE.maxUniqueImages` (10) different photos
@@ -228,7 +236,9 @@ limits) and `makeThumbnail(src)`.
   **quantity dropdown** (1 … 500 minus the other items), the line price,
   and Remove. If the cart breaks a limit (e.g. an old cart), checkout says
   so and disables Pay.
-- **Contact + shipping address:** country is `CA`/`US` and drives shipping.
+- **Contact + shipping address:** a required **Full name** (for the
+  shipping label), email, phone and address, with the same `maxlength`s as
+  the server's limits. Country is `CA`/`US` and drives shipping.
 - **Summary:** "27 cutouts · 3 designs" (pre-discount), bulk discount,
   order-level shipping (once a country is chosen), and the total, labelled
   CAD.
@@ -257,19 +267,38 @@ A form (order ID + email) that calls `GET /api/orders/:id?email=...` and
 shows a friendly status label and the items. With `?order=<id>` (the
 Stripe success URL) it prefills the ID and clears the cart.
 
-### `admin.html`: Owner admin
+### `admin.html`: Owner admin (`js/admin.js`)
 - **Sign-in:** asks for the operator's name and the `ADMIN_TOKEN` once per
-  tab. Both are kept in `sessionStorage` only and sent as `X-Admin-Name` /
-  `X-Admin-Token` headers, never in a URL. A 401 sends you back to
-  sign-in, and a 429 shows how many minutes to wait.
-- **Order list:** filtered by status (the default is "Paid (to forward)").
-- **Opening an order shows:**
-  - customer, address and totals
-  - per item: size, width, text elements, and a download link with its
-    expiry date ("Generate fresh links", "Copy link")
-  - a status changer with a confirm step ("shipped" emails the customer)
-  - the status history
-- All customer-supplied text is HTML-escaped before it's rendered.
+  tab. Both are kept in `sessionStorage` only (never `localStorage`, never in
+  a URL), with a **Log out** link. The token is sent as
+  `Authorization: Bearer`, the name as `X-Admin-Name`. A 401 sends you back
+  to sign-in; a 429 shows how many minutes to wait. The page is `noindex`
+  and isn't linked from public pages.
+- **Order list:**
+  - status filter (the default is **Needs action**: paid + in production)
+  - search by email, name or order ID; From/To dates
+  - 25 per page with Previous/Next
+  - columns: short ID, created, name + email, status, total (CAD), items
+    (and cutouts), country
+- **Order detail:**
+  - contact, ship-to address, totals including shipping
+  - the Stripe payment ID and the final-sale acceptance time
+  - tracking, once shipped
+  - items: size, dimensions, material, quantity, text, print-quality score,
+    and download/copy links
+- **Actions:**
+  - **Download supplier bundle** (a zip, fetched with the token and saved
+    via `Api.download`)
+  - **Generate fresh image links**
+- **Change status:** only the allowed next statuses are offered. "Shipped"
+  shows required carrier and tracking-number fields (plus an optional
+  URL). There's a confirm step. If the shipped email failed, a warning is
+  shown (the status is still saved).
+- **Internal notes:** a list with time and author, plus an add form (2000
+  characters). Never shown to customers.
+- **History:** every status change, with who, from → to, time and IP.
+
+All customer-supplied text is HTML-escaped before it's rendered.
 
 ## Live pricing logic
 
@@ -283,7 +312,8 @@ calculatePrice({ sizeTier, material, quantity, rates, discountTiers })
 // → { baseRate, unitPrice, discountPct, subtotal, discountAmount, total } or null
 
 printQuality({ widthPx, heightPx, heightIn, widthIn })
-// → { ppi, grade: "great" | "good" | "fair" | "low" }  (≥50 / ≥30 / ≥18 / below)
+// → { ppi, score: 0–100, grade: "great" | "good" | "fair" | "low" }
+//   score = min(100, ppi × 2), capped at 59 under 1000 px; grades ≥90 / ≥60 / ≥36 / below
 
 calculateOrderShipping({ country, items: [{ sizeTier, quantity }], shippingRates })
 // → one first-unit charge (largest size) + every other cutout at its size's

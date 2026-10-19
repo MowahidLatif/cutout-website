@@ -30,11 +30,16 @@ router.post("/webhooks/stripe", async (req, res) => {
         // amount_total is in cents; record what Stripe actually charged.
         const amount = typeof session.amount_total === "number" ? session.amount_total / 100 : undefined;
         const currency = session.currency ? session.currency.toUpperCase() : undefined;
-        const order = await ordersService.markOrderPaid(orderId, session.payment_intent, {
+        const { order, changed } = await ordersService.markOrderPaid(orderId, session.payment_intent, {
           amount,
           currency,
           rawPayload: event,
         });
+        if (!changed) {
+          // A retry of an event we've already handled (or the order wasn't
+          // pending): the payment is recorded and the emails went out — do nothing.
+          return res.json({ received: true });
+        }
         // Only comparable in the same currency. (With Stripe Adaptive Pricing
         // the session still reports amount_total in CAD.)
         if (amount !== undefined && currency === order.currency && Math.abs(amount - order.totalPrice) > 0.005) {

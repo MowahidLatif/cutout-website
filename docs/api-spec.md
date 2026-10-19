@@ -15,8 +15,31 @@ Every failure has the shape
 | `UNAUTHORIZED` | 401 | admin token missing or wrong |
 | `FORBIDDEN` | 403 | admin request over plain HTTP in production |
 | `NOT_FOUND` | 404 | unknown or malformed order ID, or an email that doesn't match |
-| `RATE_LIMITED` | 429 | too many failed admin attempts (`Retry-After` header, in seconds) |
-| `INTERNAL_ERROR` | 500 | anything unexpected (logged server-side) |
+| `CONFLICT` | 409 | a status change that isn't allowed (admin) |
+| `PAYLOAD_TOO_LARGE` | 413 | a JSON body over 100 kB, or an upload over `UPLOAD_MAX_MB` |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | an upload that isn't JPEG, PNG, WebP, HEIC or PDF |
+| `RATE_LIMITED` | 429 | too many requests (`Retry-After` header, in seconds); see "Rate limits" |
+| `INTERNAL_ERROR` | 500 | anything unexpected. Logged server-side; in production the message is generic (no stack traces or SQL errors) |
+
+## Rate limits
+
+Per client IP, in 15-minute windows, kept in memory (fine for one server; a
+restart resets them):
+
+| Endpoint | Limit |
+|---|---|
+| `POST /orders` | 10 |
+| `POST /orders/:id/checkout-session` | 10 |
+| `POST /uploads` | 20 |
+| `GET /orders/:id` (lookup) | 30 |
+| `/admin/*` | 10 failed sign-ins; 300 in total |
+
+`/webhooks/stripe` and `/health` are never limited. Over the limit you get
+429 `RATE_LIMITED` with `Retry-After`. The client IP comes from
+`TRUST_PROXY` / `CLIENT_IP_HEADER` (see `backend-guide.md`).
+
+JSON bodies are capped at **100 kB** (413). The Stripe webhook's raw body
+has its own parser.
 
 `GET /files/:key` and `POST /webhooks/stripe` don't use the envelope (see
 below). `GET /health` (outside `/api`) returns `{ "status": "ok" }`.
@@ -60,17 +83,21 @@ checked and cleaned up:
 - **Type** (detected from the file contents; the file name and Content-Type
   are ignored):
   - **JPEG, PNG, WebP:** kept as they are.
-  - **GIF** (first frame), **TIFF**, **AVIF:** converted to JPEG (or PNG if
-    transparent).
   - **HEIC** (iPhone): converted to JPEG.
   - **PDF:** page 1 rendered to a PNG about 6000 px on its long side. A
     multi-page PDF returns a `note`. A password-protected or broken PDF is
     a 400.
-  - **SVG** and anything else: 400.
-- **Size:** at most `UPLOAD_MAX_MB` (default 25).
+  - **Anything else** (GIF, TIFF, AVIF, SVG, non-images): **415**
+    `UNSUPPORTED_MEDIA_TYPE`.
+- **Size:** at most `UPLOAD_MAX_MB` (**default 18 MB**), otherwise 413. That's
+  the most a file can be and still go by email: mailboxes cap a whole
+  message at 20–25 MB, and attachments grow by about a third when encoded.
+  The stored print file is kept under the same limit; if processing makes
+  it bigger, it's re-encoded as JPEG and scaled down until it fits.
 - **No minimum resolution.** The response includes the pixel size, and the
-  studio shows the print quality. A **low** rating has to be confirmed per
-  item when ordering (see `POST /orders`).
+  studio shows a 0–100 print-quality score. Photos under 1000 px on their
+  long side can't score above "fair". A **low** rating has to be confirmed
+  per item when ordering (see `POST /orders`).
 - **Rotation:** the EXIF orientation is baked into the pixels, so sideways
   phone photos print upright. EXIF (including GPS) is stripped, and the
   colour profile is kept.
@@ -101,6 +128,7 @@ price fields the client sends are ignored.
 Request:
 ```json
 {
+  "customerName": "Jane Doe",
   "customerEmail": "jane@example.com",
   "customerPhone": "+1-204-555-0100",
   "shippingAddress": { "line1": "...", "line2": "", "city": "...", "region": "...", "postalCode": "...", "country": "CA" },
@@ -124,6 +152,9 @@ Request:
 in the request is ignored, so a 7 ft standee can't be priced as "small".
 
 Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
+- `customerName` (**required**, up to 100 characters). Field limits:
+  `customerEmail` 254, `customerPhone` 30, address lines, city and region
+  200, `postalCode` 20, item `notes` 2000.
 - `acceptedFinalSale` must be exactly `true`: the customer ticked "I understand each standee is
   custom-made and final sale" at checkout. The server stores `finalSaleAcceptedAt` (now) and
   `finalSalePolicyVersion`, which is evidence if a payment is later disputed.
@@ -140,11 +171,15 @@ Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
     auto-calculated from the photo's proportions or set by hand.
   - `acceptedLowQuality` (optional, boolean): required (`true`) when the
     photo would print at **low** quality at this size. The server measures
-    the stored image itself: `ppi = min(pixelWidth / widthIn, pixelHeight / heightIn)`
-    gives great ≥ 50, good ≥ 30, fair ≥ 18, otherwise low. It stores the
-    pixel size, the ppi and the confirmation on the item.
+    the stored image itself:
+    - `ppi = min(pixelWidth / widthIn, pixelHeight / heightIn)`
+    - `score = min(100, ppi × 2)`, capped at 59 when the long edge is under
+      1000 px
+    - great ≥ 90, good ≥ 60, fair ≥ 36, otherwise low
+
+    It stores the pixel size, ppi, score and confirmation on the item.
   - `textElements` (optional): up to 3 items of
-    `{ style: "bubble" | "placard" | "caption", text: 1–80 characters }`.
+    `{ style: "bubble" | "placard" | "caption", text: 1–100 characters }`.
     Text is trimmed.
   - an `imageKey` that is well-formed **and** exists in storage (i.e. it
     came from `POST /uploads`)
@@ -232,60 +267,96 @@ bug on our side.
 
 ## Admin endpoints
 
-There's one operator and one shared secret. There are no accounts for
-either admins or customers.
+There's one operator (the owner) and one shared secret. There are no
+accounts for either admins or customers.
 
-- **Header only:** every `/admin/*` request needs `X-Admin-Token` equal to
-  `ADMIN_TOKEN`, otherwise 401 `UNAUTHORIZED`. A token sent in the query
-  string (`?token=`, `?admin_token=`, `?adminToken=`) is rejected with 400,
-  so it never ends up in URLs, logs or browser history.
-- **Strength:** in production the server refuses to start unless
-  `ADMIN_TOKEN` (and `FILE_LINK_SECRET`) is set, isn't the dev default, and
-  is at least 32 characters. Generate one with `openssl rand -base64 48`.
+- **Auth:** every `/admin/*` request needs `Authorization: Bearer <ADMIN_TOKEN>`,
+  otherwise 401 `UNAUTHORIZED`. A token in the query string (`?token=`,
+  `?admin_token=`, `?adminToken=`) is rejected with 400, so it never ends up
+  in URLs, logs or browser history.
 - **Comparison:** both sides are SHA-256 hashed, then compared with
   `crypto.timingSafeEqual`, so neither timing nor length leaks.
-- **Rate limit:** 10 failed attempts per 15 minutes per client IP. After
-  that every admin request from that IP, even one with the right token,
-  gets 429 `RATE_LIMITED` with `Retry-After` (seconds) until the window
-  ends. Failures are logged with the IP, never the submitted value. The
-  counters are in memory, so a restart clears them.
-- **HTTPS:** with `NODE_ENV=production`, plain-HTTP admin requests get 403
-  `FORBIDDEN`. TLS is terminated by Caddy, and the app trusts its
-  `X-Forwarded-Proto`/`X-Forwarded-For` according to `TRUST_PROXY`.
+- **Strength:** in production the server refuses to start unless
+  `ADMIN_TOKEN` is set, isn't the dev default, and is at least 32 characters.
+  Generate one with `openssl rand -base64 48`.
+- **Rate limits:** 10 **failed** sign-ins per 15 minutes per client IP. After
+  that, every admin request from that IP (even with the right token) gets 429
+  until the window ends. Successful requests don't count toward the 10, but
+  all admin requests together are capped at 300 per 15 minutes.
+- **HTTPS:** with `NODE_ENV=production`, plain-HTTP admin requests get 403.
 - **Operator name:** `X-Admin-Name` (optional, max 80 characters, default
-  `admin`) is recorded on status changes. It's self-declared, since one
-  shared secret can't prove who someone is. The IP and user agent are
-  recorded alongside it.
+  `admin`) is recorded on status changes and notes. It's self-declared,
+  since one shared secret can't prove who someone is; the IP and user agent
+  are recorded too.
 
-`frontend/admin.html` asks for the name and token once per browser tab
-and keeps them in `sessionStorage`, which is cleared when the tab closes.
+`frontend/admin.html` asks for the name and token once per browser tab and
+keeps them in `sessionStorage` (cleared when the tab closes), with a Log out
+button. It's `noindex` and not linked from public pages.
 
-### `GET /admin/orders?status=...`
-Lists orders, newest first, optionally filtered by `status`. Each item is
-`{ "id", "customerEmail", "status", "totalPrice", "createdAt" }`.
+### `GET /admin/orders`
+Query: `status` (`needs_action` (the default: `paid` + `in_production`),
+`all`, or one status), `q` (email or name substring, or an order-ID prefix),
+`from` / `to` (`YYYY-MM-DD`, inclusive, on the created date), and `page`.
+Newest first, **25 per page**.
+
+```json
+{ "orders": [{ "id": "…", "shortId": "c02a00ab", "customerName": "Acme Events", "customerEmail": "…",
+    "status": "paid", "totalPrice": 860, "currency": "CAD", "itemCount": 1, "cutoutCount": 5,
+    "country": "CA", "createdAt": "…" }],
+  "page": 1, "pageSize": 25, "total": 1 }
+```
 
 ### `GET /admin/orders/:id`
-The full order (same shape as the customer lookup), plus:
-- each item gets `downloadUrl` and `downloadExpiresAt`, a freshly signed
-  link valid for `DOWNLOAD_LINK_TTL_DAYS` (default 30). Both are `null`
-  for items from before `003_image_key.sql`.
-- `statusEvents`: the status history, oldest first:
-  `[{ "fromStatus", "toStatus", "changedBy", "ip", "userAgent", "createdAt" }]`.
+The full order (the customer-lookup shape plus `stripePaymentIntentId`,
+`carrier`, `trackingNumber`, `trackingUrl`, `shippedAt`), and also:
+- per item, `downloadUrl` and `downloadExpiresAt`: a freshly signed link,
+  valid for `DOWNLOAD_LINK_TTL_DAYS` (default 30)
+- `statusEvents`: the history, oldest first
+  (`fromStatus`, `toStatus`, `changedBy`, `ip`, `userAgent`, `createdAt`)
+- `notes`: internal notes (`id`, `body`, `author`, `createdAt`)
+- `allowedNextStatuses`: what the status can change to from here
 
-### `POST /admin/orders/:id/download-links`
-Issues new links for every item in the order:
-`[{ "itemId": "…", "url": "…", "expiresAt": "…" }]`. This backs the
-"Generate fresh links" button for when the supplier's emailed link has
-expired.
+A malformed ID gets 400; an unknown one gets 404.
+
+### `POST /admin/orders/:id/notes`
+Body `{ "body": "…" }`, 1–2000 characters. Returns the notes list (201).
+Notes are internal only: they never appear in customer responses or emails.
 
 ### `PATCH /admin/orders/:id/status`
-Body: `{ "status": "in_production" | "shipped" | "delivered" | "cancelled" }`.
-`paid` can't be set here; only the webhook does that. Returns the
-updated order.
+Body: `{ "status", "carrier"?, "trackingNumber"?, "trackingUrl"? }`.
 
-- Setting the status the order already has is a 400. That also stops a
-  duplicate "shipped" email.
-- `shipped` emails the customer.
-- Each change writes an `order_status_events` row (`X-Admin-Name`, IP,
-  user agent) in the same transaction, and logs a console line:
-  `[admin] <name>@<ip> changed order <id> <from> → <to>`.
+**Allowed transitions only**; anything else is a 409 `CONFLICT` that names
+the allowed next statuses:
+
+| From | To |
+|---|---|
+| `paid` | `in_production`, `cancelled` |
+| `in_production` | `shipped`, `cancelled` |
+| `shipped` | `delivered` |
+
+`pending_payment → paid` is the Stripe webhook's job, never an admin's.
+
+- **`shipped`** requires `carrier` and `trackingNumber` (each up to 100
+  characters; otherwise 400). `trackingUrl` is optional, http(s), up to 500
+  characters. They're stored on the order with `shipped_at`.
+- Every change writes an `order_status_events` row in the same transaction.
+- On `shipped`, the customer gets the shipped email with the carrier and
+  tracking. **If that email fails, the status change still stands**: the
+  failure is logged, and the response's `warning` says so (the admin page
+  shows it). Otherwise `warning` is `null`.
+- There's no refund action; refunds are done in the Stripe dashboard.
+
+### `POST /admin/orders/:id/download-links`
+Fresh 30-day image links for every item:
+`[{ "itemId", "url", "expiresAt" }]`.
+
+### `GET /admin/orders/:id/bundle`
+The **supplier bundle**: a zip streamed straight from storage, through this
+admin-authenticated endpoint. There's no public URL. It contains:
+- `<orderId>-order-details.txt`: the order ID; per item the size,
+  dimensions, material, quantity, text and print quality; the recipient's
+  name, address, phone and email
+- `<orderId>-item-<n>.<ext>`: each print file
+
+The images are our processed print files (rotated; PDF page 1 / HEIC
+converted). The original upload bytes aren't kept.

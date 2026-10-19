@@ -425,7 +425,7 @@
     if (widthProblem(d)) return "Check the size";
     const q = qualityOf(d);
     if (q) {
-      const label = `Quality: ${SITE.qualityLabels[q.grade]} (${q.ppi} ppi)`;
+      const label = `Quality ${q.score}/100 · ${SITE.qualityLabels[q.grade]}`;
       return needsLowQualityOk(d) ? `${label} — confirm` : label;
     }
     return "✓ Uploaded";
@@ -872,6 +872,7 @@
     good: "Should look good at this size.",
     fair: "May look a little soft up close. A sharper photo or a smaller size will help.",
     low: "Likely to look blurry or pixelated at this size. Use a sharper or original photo, or choose a smaller size.",
+    small: "This photo is under 1000 px, so it can't score above Fair — an original from your camera will print much sharper.",
   };
 
   function renderQuality(d) {
@@ -879,8 +880,9 @@
     els.qualityRow.hidden = !q || d.isSample;
     if (!q) return;
     els.qualityBadge.className = `quality-badge is-${q.grade}`;
-    els.qualityBadge.textContent = `${SITE.qualityLabels[q.grade]} · ${q.ppi} pixels per inch`;
-    els.qualityTip.textContent = QUALITY_TIPS[q.grade] + (d.note ? ` ${d.note}` : "");
+    els.qualityBadge.textContent = `Quality ${q.score}/100 · ${SITE.qualityLabels[q.grade]}`;
+    const small = Math.max(d.widthPx, d.heightPx) < 1000 && q.grade !== "low";
+    els.qualityTip.textContent = (small ? QUALITY_TIPS.small : QUALITY_TIPS[q.grade]) + (d.note ? ` ${d.note}` : "");
     els.qualityConsent.hidden = q.grade !== "low";
     els.qualityConsent.classList.toggle("has-error", q.grade === "low" && !d.acceptedLowQuality);
     els.acceptLowQuality.checked = d.acceptedLowQuality;

@@ -8,17 +8,20 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "migrate": "node src/db/migrate.js",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.620.0",
     "@aws-sdk/client-ses": "^3.620.0",
     "@aws-sdk/s3-request-presigner": "^3.620.0",
     "@napi-rs/canvas": "^1.0.10",
+    "archiver": "^8.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.7.0",
     "heic-decode": "^2.1.0",
+    "helmet": "^8.3.0",
     "libheif-js": "^1.23.5",
     "multer": "^2.4.0",
     "pdfjs-dist": "^6.4.299",

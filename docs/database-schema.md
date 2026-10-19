@@ -16,6 +16,7 @@ order by `npm run migrate`:
 | `005_item_customization.sql` | `order_items.width_in` + `order_items.text_elements` (studio customization) |
 | `006_cad_and_final_sale.sql` | `orders.currency`, final-sale acceptance columns, `payments.currency`, `schema_flags`; converts the USD seed prices to CAD (once) |
 | `007_print_quality.sql` | `order_items` image pixel size, `print_ppi`, `low_quality_accepted` |
+| `008_admin_and_names.sql` | `orders.customer_name`, shipping/tracking columns, `order_items.print_score`, `order_notes` table, list indexes |
 
 `migrate.js` re-runs **every** file on each run, so every migration must
 be idempotent (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`, guarded `DO`
@@ -26,6 +27,7 @@ blocks).
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid, pk | |
+| customer_name | text | full name from checkout (≤ 100), for the shipping label; null on orders before `008` |
 | customer_email | text | required |
 | customer_phone | text | required |
 | shipping_address | jsonb | stored as sent: `{ line1, line2, city, region, postalCode, country }`; `country` is `CA` or `US` |
@@ -39,6 +41,9 @@ blocks).
 | final_sale_policy_version | text | which version of `policies.html` they accepted, e.g. `2026-10-18` |
 | stripe_session_id | text | nullable until a checkout session is created |
 | stripe_payment_intent_id | text | nullable until paid |
+| carrier / tracking_number | text | set when an admin marks the order shipped (both required then) |
+| tracking_url | text | optional link for the customer |
+| shipped_at | timestamptz | when it was marked shipped |
 | created_at | timestamptz | |
 | updated_at | timestamptz | bumped on every status change |
 
@@ -54,9 +59,10 @@ blocks).
 | height_in | numeric(6,2) | chosen by the customer in the studio, 12–96 |
 | width_in | numeric(6,2) | nullable; printed width, 6–96. Auto from the photo's proportions, or set by hand if unlocked. Null on rows from before `005` |
 | image_width_px / image_height_px | integer | pixel size of the stored (processed) image, measured by the server; null before `007` |
-| print_ppi | integer | pixels per printed inch at the ordered size (great ≥ 50, good ≥ 30, fair ≥ 18, low below) |
+| print_ppi | integer | pixels per printed inch at the ordered size |
+| print_score | integer | 0–100: `min(100, ppi × 2)`, capped at 59 under 1000 px (great ≥ 90, good ≥ 60, fair ≥ 36, low below); null before `008` |
 | low_quality_accepted | boolean | true when the item was low quality and the customer ticked "I understand this may print blurry" |
-| text_elements | jsonb | `[{ style: "bubble"\|"placard"\|"caption", text }]`, max 3, text 1–80 characters; default `[]` |
+| text_elements | jsonb | `[{ style: "bubble"\|"placard"\|"caption", text }]`, max 3, text 1–100 characters; default `[]` |
 | quantity | integer | `> 0` |
 | unit_price | numeric(10,2) | after the quantity discount; snapshot at order time (config may change later) |
 | line_total | numeric(10,2) | `unit_price * quantity`; product only, no shipping |
@@ -159,6 +165,18 @@ without the change, or the change without its event.
 | changed_by | text | self-declared admin name (`X-Admin-Name`, default `admin`), or `stripe-webhook` |
 | ip | text | client IP (the real one via Caddy, see `TRUST_PROXY`); null for the webhook |
 | user_agent | text | null for the webhook |
+| created_at | timestamptz | |
+
+## `order_notes`
+
+Internal notes on an order (`008`). These are admin only and never shown to customers.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid, pk | |
+| order_id | uuid, fk → orders.id | cascade delete; indexed with `created_at` |
+| body | text | 1–2000 characters (`CHECK`) |
+| author | text | the admin's self-declared name (`X-Admin-Name`) |
 | created_at | timestamptz | |
 
 ## `schema_flags`

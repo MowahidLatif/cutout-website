@@ -77,13 +77,15 @@
       caption: "Caption",
     },
     maxTextElements: 3,
-    maxTextLength: 80,
+    maxTextLength: 100, // keep in step with MAX_TEXT_LENGTH on the backend
 
     // Shipping estimate shown in the studio before the customer picks a country.
     defaultCountry: "CA",
     countryLabels: { CA: "Canada", US: "the United States" },
 
-    maxUploadMb: 25, // keep in step with UPLOAD_MAX_MB on the backend
+    // Keep in step with UPLOAD_MAX_MB on the backend: the most a file can be
+    // and still be emailed to the printer.
+    maxUploadMb: 18,
 
     // Per-order limits. Must match MAX_ORDER_QUANTITY / MAX_UNIQUE_IMAGES in
     // backend/src/services/orders.js.

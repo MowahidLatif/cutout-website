@@ -20,10 +20,14 @@ backend/
 ├── storage/uploads/           — uploaded images when STORAGE_DRIVER=disk
 │                                (gitignored, never served statically)
 └── src/
-    ├── server.js              — startup secret checks, trust proxy,
-    │                             optional CORS, mounts /api routes, then
-    │                             serves frontend/ (clean URLs), listens
+    ├── app.js                 — createApp(): security headers, optional
+    │                             CORS, body limit, rate limits, /api
+    │                             routes, frontend/ (clean URLs), error
+    │                             handler. No listening (tests use it)
+    ├── server.js              — production startup checks, then listens
     │                             on HOST:PORT
+    ├── security.js            — client IP (TRUST_PROXY / CLIENT_IP_HEADER),
+    │                             rate limiters, helmet/CSP
     ├── routes/
     │   ├── _respond.js         — ok()/fail(): the { data, error } envelope +
     │   │                         error code → HTTP status map
@@ -33,10 +37,9 @@ backend/
     │   │                         GET /orders/:id?email=
     │   ├── webhooks.js         — POST /webhooks/stripe
     │   ├── files.js            — GET /files/:key (expiring signed image downloads)
-    │   └── admin.js            — X-Admin-Token gate + failed-attempt limit;
-    │                             GET /admin/orders[/:id],
-    │                             POST /admin/orders/:id/download-links,
-    │                             PATCH /admin/orders/:id/status
+    │   └── admin.js            — Bearer-token gate; GET /admin/orders[/:id],
+    │                             POST …/notes, PATCH …/status,
+    │                             POST …/download-links, GET …/bundle (zip)
     ├── services/
     │   ├── pricing.js          — sizeTierForHeight, getPricingConfig,
     │   │                         calculatePrice, shippingForItems,
@@ -71,16 +74,20 @@ idempotent. See `database-schema.md`.
 
 ## One port: API + site
 
-`server.js` serves everything from one Express app (http://localhost:4000
-locally), in this order:
+`app.js` (`createApp()`) builds one Express app that serves everything
+(http://localhost:4000 locally); `server.js` runs the startup checks and
+listens. The order, top to bottom:
 
-1. `/api/webhooks/stripe` (raw body), then `express.json()` and the `/api`
-   routers, plus `/health`
-2. any other `/api/*` → a JSON 404 (never an HTML page)
-3. `express.static(frontend/, { extensions: ["html"] })`, which serves `/` →
+1. `helmet` security headers (see "Hardening"); `X-Powered-By` off
+2. `/api/webhooks/stripe` (raw body, no rate limit) and `/health`
+3. `express.json({ limit: "100kb" })`, then the per-route rate limits
+4. the `/api` routers; any other `/api/*` → a JSON 404 (never an HTML page)
+5. `express.static(frontend/, { extensions: ["html"] })`, which serves `/` →
    `index.html` and `/pricing` → `pricing.html` (the `.html` URLs work too).
    Dotfiles aren't served.
-4. `/favicon.ico` → `/favicon.svg`; anything else → plain-text 404
+6. `/favicon.ico` → `/favicon.svg`; anything else → plain-text 404
+7. a final error handler: 413 for oversized bodies, 400 for bad JSON, and
+   otherwise `fail()` (which never sends internal details in production)
 
 The browser calls the API on the same origin, so **no CORS is configured**
 unless `FRONTEND_ORIGIN` is set (only needed if the frontend is ever hosted
@@ -229,7 +236,9 @@ confirmation email includes it.
 - `POST /api/webhooks/stripe` (raw body, signature-verified via
   `constructWebhookEvent`) is the only route that can mark an order `paid`.
   Never trust the client redirect.
-- On `checkout.session.completed`, the webhook route:
+- On `checkout.session.completed`, the webhook route (emails go out only
+  when this call actually changed the order, so a Stripe retry sends nothing
+  twice):
   - calls `ordersService.markOrderPaid(id, paymentIntentId, { amount, rawPayload })`.
     In one SQL statement it flips the status, writes the audit event and
     writes the `payments` row, only if the order was still
@@ -240,15 +249,20 @@ confirmation email includes it.
 ## Image uploads & storage
 
 - `POST /api/uploads` (multer, in memory) → `uploads.processUpload`. It
-  accepts **any photo or a PDF**, identified by the decoded contents:
+  accepts **JPEG, PNG, WebP, HEIC or PDF**, identified by the decoded
+  contents (magic bytes), never the name or Content-Type:
   - JPEG, PNG and WebP are kept as they are.
-  - GIF, TIFF and AVIF become JPEG (PNG if transparent).
   - HEIC is decoded with `heic-decode` (libheif compiled to WebAssembly,
     since the prebuilt `sharp` can't decode HEVC) and saved as JPEG.
   - PDF: page 1 is rendered with `pdfjs-dist` + `@napi-rs/canvas` at about
     6000 px on the long side (`isEvalSupported: false`, so no code from
     the PDF is ever compiled).
-  - SVG is rejected.
+  - Anything else (GIF, TIFF, AVIF, SVG, …) → **415**.
+  - **Size:** `UPLOAD_MAX_MB` (default **18**, otherwise 413), the most that
+    can still be emailed (mailbox caps of 20–25 MB, minus about a third for
+    attachment encoding). The **stored** print file is held to the same
+    limit: if processing makes it bigger, `shrinkToFit` re-encodes it as
+    JPEG and scales it down in steps.
 
   It bakes in the EXIF rotation, strips EXIF/GPS (keeping the colour
   profile), and saves under a random key. Orders store only that key
@@ -256,8 +270,9 @@ confirmation email includes it.
   processed image.
 - **No minimum resolution; print quality instead.** `printQuality()` in
   `services/pricing.js` (mirrored in the frontend, with a parity test)
-  rates pixels per printed inch: great ≥ 50, good ≥ 30, fair ≥ 18,
-  otherwise low.
+  turns pixels per printed inch into a **0–100 score**:
+  `min(100, ppi × 2)`, capped at 59 when the image is under 1000 px on its
+  long side. Grades: great ≥ 90, good ≥ 60, fair ≥ 36, otherwise low.
   - `createOrder` reads each stored image's real size
     (`storage.readImageSize`), so it never trusts the browser.
   - It rejects a **low** item unless `acceptedLowQuality: true`.
@@ -276,28 +291,80 @@ confirmation email includes it.
 - Known gaps: uploads that never become orders aren't cleaned up, and
   there's no rate limit on `POST /api/uploads` yet.
 
-## Admin access & deployment
+## Admin
 
-- `/api/admin/*` is gated by one shared secret (`ADMIN_TOKEN`) in the
-  `X-Admin-Token` header, with a per-IP failed-attempt limit (10 per 15
-  minutes, in memory). Details are in `api-spec.md`. All of it lives in
-  `routes/admin.js`, so there's no auth framework to maintain.
-- `server.js` refuses to start in production if `ADMIN_TOKEN` or
-  `FILE_LINK_SECRET` is missing, a dev default, or under 32 characters;
-  if `FULFILLMENT_EMAIL` isn't an email address (paid orders would never
-  reach the supplier); or if `SITE_URL` isn't an `https://` address
-  (emails and Stripe would link to localhost). In dev it only warns about
-  the secrets.
-- Production runs behind **Caddy**, which terminates HTTPS:
-  - `HOST=127.0.0.1`: the app only listens on localhost, so nobody can
-    bypass Caddy and talk plain HTTP to port 4000.
-  - `TRUST_PROXY` (default `loopback`): which proxy's `X-Forwarded-For` /
-    `X-Forwarded-Proto` to believe. That gives the rate limit and audit log
-    the real client IP, and lets `req.secure` work. Never set it to `true`
-    on a server reachable directly from the internet, because clients
-    could then spoof their IP.
-  - With `NODE_ENV=production`, admin requests that didn't come over
-    HTTPS are refused (403).
+- **Auth:** `routes/admin.js` checks `Authorization: Bearer <ADMIN_TOKEN>`
+  (SHA-256 + `timingSafeEqual`), with 401 otherwise. Failed attempts count
+  toward a per-IP limit (`security.js`). HTTPS is required in production.
+- **List and detail:** `services/orders.js` `listOrders()` handles the
+  status, search, date and page filters (25 per page). The detail endpoint
+  adds the history, notes and `allowedNextStatuses`.
+- **Status changes:** `updateOrderStatus()` enforces `ALLOWED_TRANSITIONS`
+  (409 otherwise) and requires a carrier and tracking number for
+  `shipped`. The change and its `order_status_events` row are one
+  transaction. The shipped email is sent after the commit; if it fails, the
+  route logs it and returns a `warning` instead of undoing the change.
+- **Notes:** `addNote()` / `getNotes()` use the `order_notes` table. Notes
+  are never part of a customer response.
+- **Supplier bundle:** `GET /admin/orders/:id/bundle` streams a zip
+  (`archiver`) of `<orderId>-order-details.txt` plus the print files, read
+  through `storage.readFile()`. That works for disk now and S3 later, with
+  no public URL.
+
+## Hardening (`security.js`, `app.js`)
+
+- **Client IP:**
+  - `TRUST_PROXY` is the number of proxies in front: **0** locally (the
+    default), **1 behind Caddy**. Express then reads the client IP from that
+    many `X-Forwarded-For` hops and ignores anything a client adds beyond
+    them.
+  - Optional `CLIENT_IP_HEADER` (e.g. `cf-connecting-ip`) reads the IP from
+    that header instead. Only set it when such a proxy (Cloudflare) really
+    is in front: otherwise anyone can fake it and dodge the limits.
+  - The audit log uses the same IP.
+- **Rate limits** (`express-rate-limit`, in memory, per IP per 15 min):
+
+  | Route | Limit |
+  |---|---|
+  | create order | 10 |
+  | checkout session | 10 |
+  | uploads | 20 |
+  | order lookup | 30 |
+  | admin | 10 failed sign-ins; 300 total |
+
+  The webhook and `/health` are exempt. Over the limit: 429 JSON plus
+  `Retry-After`.
+- **Headers** (`helmet`):
+  - **CSP:**
+    - `default-src 'self'`
+    - scripts only from our files and `js.stripe.com`; **no inline
+      scripts** (the pricing and policies pages load `js/pricing-page.js` /
+      `js/policies.js`)
+    - styles from self, Google Fonts and inline `style=""`
+    - fonts from `fonts.gstatic.com`
+    - images from self, `data:`, `blob:` and, with S3, the bucket's origin
+    - `connect-src` self and `api.stripe.com`
+    - `frame-ancestors 'none'`
+  - HSTS only with `NODE_ENV=production`
+  - `nosniff`, `Referrer-Policy: no-referrer`, no `X-Powered-By`
+- **Input limits:**
+  - JSON bodies 100 kB
+  - server-side field limits on orders (name 100, email 254, phone 30,
+    address 200, postal code 20, text 100, notes 2000)
+  - malformed IDs → 400 before any query
+  - CORS is off unless `FRONTEND_ORIGIN` is set
+- **Errors:** a final error handler, and `fail()` hides 500 details in
+  production (they're logged server-side).
+- **Production startup** (`server.js`) refuses to start when:
+  - `ADMIN_TOKEN` or `FILE_LINK_SECRET` is missing, a dev default, or under
+    32 characters
+  - `STRIPE_WEBHOOK_SECRET` or `DATABASE_URL` is missing
+  - `FULFILLMENT_EMAIL` isn't an email address
+  - `SITE_URL` isn't `https://`
+
+  In dev it only warns about the secrets.
+- **Production network:** behind Caddy with `HOST=127.0.0.1` (only Caddy
+  can reach the app) and `TRUST_PROXY=1`.
 
 ## Labels (`services/catalog.js`)
 
@@ -312,19 +379,27 @@ they drift. The Stripe parameters are built by the pure
 ## Tests
 
 ```bash
-cd backend && npm test      # node --test "test/*.test.js"
+cd backend && npm test   # node --test, one file at a time; ~20 s
 ```
 
-These use Node's built-in test runner, with no framework. Tests that need
-a database get an in-process Postgres (`@electric-sql/pglite`, a dev
-dependency) with every migration applied, so they never touch your real
-database. They cover:
-- material/quantity integrity from the UI to `order_items` and Stripe
-- email content
-- print quality (browser = server)
-- the upload formats (including PDF and HEIC)
-- the low-quality confirmation
-- production startup checks
+These use Node's built-in runner and `fetch` against the real app
+(`createApp()` on a throwaway port). Stripe Checkout and email are stubbed,
+so there's no network; webhook signatures are generated with Stripe's own
+`generateTestHeaderString`.
+- **Database:** `TEST_DATABASE_URL` (env, or the git-ignored
+  `backend/.env.test`) is a **separate** Postgres database. It's migrated at
+  the start of each file and wiped (`TRUNCATE` of the order tables) before
+  each test. It's refused if it equals `DATABASE_URL` or its name doesn't
+  end in `_test`. If it's unset, the suite uses an in-memory PGlite, so it
+  runs anywhere. Your dev database is never touched.
+- **Coverage:**
+  - pricing (server = browser, including shipping and discount tiers)
+  - order creation and its limits
+  - the webhook (signed, idempotent, bad signature)
+  - admin (auth, transitions, tracking, history, notes, the bundle zip)
+  - limits (429, 413, 415)
+  - uploads, print quality, emails, material integrity, and the startup
+    checks
 
 ## Email (SES)
 
@@ -359,11 +434,12 @@ All are in `backend/.env.example` with working dev defaults, except
 | `NODE_ENV` | (unset) | `production` turns on the secret checks and the admin HTTPS requirement |
 | `PORT` | `4000` | listen port |
 | `HOST` | `0.0.0.0` | listen address; `127.0.0.1` in production (behind Caddy) |
-| `TRUST_PROXY` | `loopback` | Express `trust proxy`; `true`/`false`/hop count/subnets also accepted |
+| `TRUST_PROXY` | `0` | number of proxies in front (0 locally, **1 behind Caddy**); used for the client IP |
+| `CLIENT_IP_HEADER` | (unset) | e.g. `cf-connecting-ip`, **only** with Cloudflare in front; otherwise leave unset |
 | `FRONTEND_ORIGIN` | (unset: no CORS) | only if the frontend is hosted on a different origin; enables CORS for that origin |
-| `DATABASE_URL` | (none) | Postgres connection string |
+| `DATABASE_URL` | (none) | Postgres connection string; **required in production** |
 | `STRIPE_SECRET_KEY` | (none) | required for checkout sessions |
-| `STRIPE_WEBHOOK_SECRET` | (none) | verifies webhook signatures |
+| `STRIPE_WEBHOOK_SECRET` | (none) | verifies webhook signatures; **required in production** |
 | `STRIPE_SUCCESS_URL` | `${SITE_URL}/order-status?order={ORDER_ID}` | redirect after payment; `{ORDER_ID}` is substituted |
 | `STRIPE_CANCEL_URL` | `${SITE_URL}/checkout` | redirect if the customer cancels (back to the cart) |
 | `STORAGE_DRIVER` | `disk` | `disk` or `s3` |
@@ -371,10 +447,11 @@ All are in `backend/.env.example` with working dev defaults, except
 | `S3_BUCKET` | (none) | s3 driver bucket (private) |
 | `AWS_REGION` | `us-east-1` | S3 and SES region |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (none) | AWS credentials; without them email logs to the console |
-| `UPLOAD_MAX_MB` | `25` | upload size cap |
+| `UPLOAD_MAX_MB` | `18` | upload and stored-file size cap (the most that can still be emailed) |
 | `SITE_URL` | `http://localhost:4000` | the site's public address (site and API share it), used for every link we send: status and image links in emails, and the default Stripe return URLs. Must be `https://` in production. `PUBLIC_API_URL` (its old name) is still read as a fallback |
 | `FILE_LINK_SECRET` | dev default | HMAC key for download links (32+ characters in production) |
 | `DOWNLOAD_LINK_TTL_DAYS` | `30` | download link lifetime |
-| `ADMIN_TOKEN` | dev default | admin shared secret (32+ characters in production) |
+| `ADMIN_TOKEN` | dev default | admin shared secret, sent as `Authorization: Bearer` (32+ characters in production) |
+| `TEST_DATABASE_URL` | (unset) | tests only: a separate database whose name ends in `_test` (env or `backend/.env.test`). Unset → in-memory PGlite |
 | `FULFILLMENT_EMAIL` | (none) | where paid-order emails go; **required in production** |
 | `SES_FROM_EMAIL` | (none) | SES sender address |

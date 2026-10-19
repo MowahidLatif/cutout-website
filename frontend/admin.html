@@ -23,7 +23,7 @@
       <nav class="site-nav" data-nav aria-label="Main">
         <a href="admin.html">Orders</a>
         <a href="index.html">View site</a>
-        <a href="#" id="sign-out">Sign out</a>
+        <a href="#" id="sign-out">Log out</a>
       </nav>
       <div class="header-actions">
 
@@ -36,55 +36,80 @@
 
   <main class="container page">
     <h1>Orders</h1>
-    <p class="lead">Forward paid orders to the supplier. Image links expire; generate a fresh one any time.</p>
+    <p class="lead">Move paid orders through production and shipping, and send the supplier their bundle.</p>
 
-    <div id="status" class="status-message error"></div>
+    <div id="status" class="status-message error" role="alert"></div>
 
     <form id="token-form" class="card" style="display:none" novalidate>
       <div class="form-row cols-2">
         <div class="field">
           <label for="admin-name">Your name</label>
           <input id="admin-name" type="text" autocomplete="name" maxlength="80" required />
-          <span class="hint">Recorded in the order history when you change a status.</span>
+          <span class="hint">Recorded in the order history and on your notes.</span>
         </div>
         <div class="field">
           <label for="admin-token">Admin token</label>
           <input id="admin-token" type="password" autocomplete="current-password" required />
-          <span class="hint">The ADMIN_TOKEN value from the backend's .env. Kept for this browser tab only.</span>
+          <span class="hint">The ADMIN_TOKEN from the backend's .env. Kept for this browser tab only.</span>
         </div>
       </div>
       <button type="submit" class="btn btn-primary" style="margin-top:1.25rem">Sign in</button>
     </form>
 
     <section id="orders-section" style="display:none">
-      <div class="field" style="max-width:16rem">
-        <label for="status-filter">Status</label>
-        <select id="status-filter">
-          <option value="">All</option>
-          <option value="paid" selected>Paid (to forward)</option>
-          <option value="pending_payment">Payment pending</option>
-          <option value="in_production">In production</option>
-          <option value="shipped">Shipped</option>
-          <option value="delivered">Delivered</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-      </div>
+      <form id="filters" class="card admin-filters" novalidate>
+        <div class="field">
+          <label for="status-filter">Status</label>
+          <select id="status-filter">
+            <option value="needs_action" selected>Needs action (paid + in production)</option>
+            <option value="all">All</option>
+            <option value="pending_payment">Payment pending</option>
+            <option value="paid">Paid</option>
+            <option value="in_production">In production</option>
+            <option value="shipped">Shipped</option>
+            <option value="delivered">Delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="search">Search</label>
+          <input id="search" type="text" maxlength="200" placeholder="Email, name or order ID" />
+        </div>
+        <div class="field">
+          <label for="from-date">From</label>
+          <input id="from-date" type="date" />
+        </div>
+        <div class="field">
+          <label for="to-date">To</label>
+          <input id="to-date" type="date" />
+        </div>
+        <div class="admin-filters__actions">
+          <button type="submit" class="btn btn-primary">Apply</button>
+          <button type="button" class="btn btn-ghost" id="clear-filters">Clear</button>
+        </div>
+      </form>
 
       <div class="table-scroll">
-  
         <table style="margin-top:1rem">
           <thead>
             <tr>
+              <th>Order</th>
               <th>Created</th>
               <th>Customer</th>
               <th>Status</th>
               <th>Total (CAD)</th>
+              <th>Items</th>
+              <th>Country</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="orders-body"></tbody>
         </table>
-
+      </div>
+      <div class="admin-pager">
+        <button type="button" class="btn btn-ghost btn-sm" id="prev-page">← Previous</button>
+        <span id="page-info" class="hint"></span>
+        <button type="button" class="btn btn-ghost btn-sm" id="next-page">Next →</button>
       </div>
 
       <div id="order-detail" class="card" style="display:none; margin-top:1.5rem"></div>

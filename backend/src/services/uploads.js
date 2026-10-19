@@ -4,14 +4,18 @@
  * client's file name and Content-Type are never trusted.
  *
  * There's no minimum resolution: any size is accepted, and the studio shows
- * how sharply it will print (printQuality in services/pricing.js). Low
+ * a 0–100 print quality score (printQuality in services/pricing.js). Low
  * quality needs the customer's confirmation when ordering.
  *
  *   JPEG / PNG / WebP     → kept in their format (EXIF rotation baked in)
- *   GIF / TIFF / AVIF     → JPEG, or PNG if the image has transparency
  *   HEIC (iPhone)         → JPEG (decoded by libheif, compiled to WebAssembly)
- *   PDF                   → page 1 rendered to PNG (~6000 px on the long side)
- *   SVG and anything else → rejected
+ *   PDF                   → page 1 rendered (~6000 px on the long side)
+ *   anything else         → 415
+ *
+ * Size: uploads AND the stored print file are kept under UPLOAD_MAX_MB
+ * (default 18 MB) — the most a file can be and still go by email (mailboxes
+ * cap a whole message at 20–25 MB, and attachments grow by a third when
+ * encoded). A processed file that comes out bigger is re-encoded/shrunk.
  */
 const path = require("path");
 const sharp = require("sharp");
@@ -31,15 +35,22 @@ const OUTPUTS = {
   webp: { ext: "webp", contentType: "image/webp", encode: (img) => img.webp({ quality: 95 }) },
 };
 
-// Formats sharp decodes that we convert to a common print format.
-const CONVERTED_FORMATS = ["gif", "tiff", "heif"]; // sharp reports AVIF as "heif"
+const SUPPORTED = "JPEG, PNG, WebP, HEIC or PDF";
 
 function validationError(message) {
   return Object.assign(new Error(message), { code: "VALIDATION_ERROR" });
 }
 
+function unsupportedError(message) {
+  return Object.assign(new Error(message), { code: "UNSUPPORTED_MEDIA_TYPE" });
+}
+
+function maxUploadMb() {
+  return Number(process.env.UPLOAD_MAX_MB || 18);
+}
+
 function maxUploadBytes() {
-  return Number(process.env.UPLOAD_MAX_MB || 25) * 1024 * 1024;
+  return maxUploadMb() * 1024 * 1024;
 }
 
 function isPdf(buffer) {
@@ -106,6 +117,24 @@ async function decodeHeic(buffer) {
 }
 
 /**
+ * Keeps the stored print file small enough to email: first as a high-quality
+ * JPEG, then scaled down in steps if it's still too big.
+ */
+async function shrinkToFit(image, first) {
+  let { width, height } = first.info;
+  for (const scale of [1, 0.85, 0.7, 0.55, 0.4]) {
+    const result = await image
+      .clone()
+      .resize(Math.round(width * scale), Math.round(height * scale))
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: 90, chromaSubsampling: "4:4:4" })
+      .toBuffer({ resolveWithObject: true });
+    if (result.data.length <= maxUploadBytes()) return { result, output: OUTPUTS.jpeg };
+  }
+  throw validationError(`That file is too detailed to store under ${maxUploadMb()} MB. Please try a smaller image.`);
+}
+
+/**
  * @param {Buffer} buffer raw uploaded bytes
  * @returns {Promise<{ imageKey: string, width: number, height: number, previewUrl: string, note: string|null }>}
  */
@@ -117,7 +146,7 @@ async function processUpload(buffer) {
   if (isPdf(buffer)) {
     const { png, pages } = await renderPdfFirstPage(buffer);
     image = sharp(png, { limitInputPixels: MAX_INPUT_PIXELS });
-    output = OUTPUTS.png;
+    output = OUTPUTS.png; // falls back to JPEG below if the page is too big to email
     if (pages > 1) note = `Your PDF has ${pages} pages — we'll print page 1.`;
   } else if (isHeic(buffer)) {
     image = await decodeHeic(buffer);
@@ -127,15 +156,12 @@ async function processUpload(buffer) {
     try {
       metadata = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS }).metadata();
     } catch (err) {
-      throw validationError("That file isn't an image we can read. Please upload a photo (JPEG, PNG, HEIC, WebP…) or a PDF.");
+      throw unsupportedError(`That file isn't a photo we can use. Please upload a ${SUPPORTED} file.`);
     }
-    if (OUTPUTS[metadata.format]) {
-      output = OUTPUTS[metadata.format];
-    } else if (CONVERTED_FORMATS.includes(metadata.format)) {
-      output = metadata.hasAlpha ? OUTPUTS.png : OUTPUTS.jpeg;
-    } else {
-      throw validationError(`"${metadata.format}" files aren't supported. Please upload a photo (JPEG, PNG, HEIC, WebP…) or a PDF.`);
+    if (!OUTPUTS[metadata.format]) {
+      throw unsupportedError(`"${metadata.format.toUpperCase()}" files aren't supported. Please upload a ${SUPPORTED} file.`);
     }
+    output = OUTPUTS[metadata.format];
     // Bake EXIF rotation into the pixels so sideways phone photos don't print
     // sideways; re-encoding drops EXIF (incl. GPS) but keeps the colour profile.
     image = sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS }).autoOrient().keepIccProfile();
@@ -144,6 +170,9 @@ async function processUpload(buffer) {
   let result;
   try {
     result = await output.encode(image).toBuffer({ resolveWithObject: true });
+    if (result.data.length > maxUploadBytes()) {
+      ({ result, output } = await shrinkToFit(image, result));
+    }
   } catch (err) {
     if (err.code === "VALIDATION_ERROR") throw err;
     throw validationError("That image couldn't be read — it may be damaged. Please try another file.");
@@ -160,4 +189,4 @@ async function processUpload(buffer) {
   };
 }
 
-module.exports = { processUpload, maxUploadBytes };
+module.exports = { processUpload, maxUploadBytes, maxUploadMb };

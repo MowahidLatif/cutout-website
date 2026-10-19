@@ -56,5 +56,29 @@
     return request(path, { method: "POST", body: formData, headers });
   }
 
-  window.Api = { get, post, patch, upload };
+  /**
+   * GETs a file (e.g. the admin's supplier zip) and returns { blob, filename }.
+   * Errors come back as the usual JSON envelope and are thrown like request().
+   */
+  async function download(path, headers) {
+    const res = await fetch(BASE_URL + path, { headers: { ...headers } });
+    if (!res.ok) {
+      let message = `Request failed (${res.status})`;
+      try {
+        const body = await res.json();
+        if (body && body.error && body.error.message) message = body.error.message;
+      } catch (e) {
+        // not JSON
+      }
+      throw Object.assign(new Error(message), {
+        status: res.status,
+        retryAfter: Number(res.headers.get("Retry-After")) || null,
+      });
+    }
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = /filename="([^"]+)"/.exec(disposition);
+    return { blob: await res.blob(), filename: match ? match[1] : "download" };
+  }
+
+  window.Api = { get, post, patch, upload, download };
 })();

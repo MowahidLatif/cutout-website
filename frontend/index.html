@@ -66,7 +66,7 @@
           <span class="icon-badge icon-badge--round"><svg class="icon"><use href="#i-image-up"/></svg></span>
           <span class="dropzone__title">Drag &amp; drop your photos</span>
           <span class="dropzone__sub" id="hero-dropzone-sub">
-            or <span class="link-accent">browse files</span> · any photo or PDF, up to 25 MB · up to 10 photos
+            or <span class="link-accent">browse files</span> · JPEG, PNG, WebP, HEIC or PDF, up to 18 MB · up to 10 photos
           </span>
         </div>
         <button type="button" class="sample-link" data-try-sample>
@@ -104,7 +104,7 @@
           <h2>Design your standee, see it to scale.</h2>
         </div>
 
-        <input id="photo-input" type="file" accept="image/*,.heic,.heif,application/pdf,.pdf" multiple hidden />
+        <input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,application/pdf,.pdf" multiple hidden />
 
         <!-- One card per uploaded photo: pick which one to edit, and how many of each. -->
         <div class="photo-tray" id="photo-tray" hidden>
@@ -170,7 +170,7 @@
                 <div class="dropzone stage__dropzone" id="stage-dropzone" role="button" tabindex="0">
                   <span class="icon-badge icon-badge--round"><svg class="icon"><use href="#i-image-up"/></svg></span>
                   <span class="dropzone__title">Drag &amp; drop your photo</span>
-                  <span class="dropzone__sub">or <span class="link-accent">browse files</span> · any photo or PDF, up to 25 MB</span>
+                  <span class="dropzone__sub">or <span class="link-accent">browse files</span> · JPEG, PNG, WebP, HEIC or PDF, up to 18 MB</span>
                 </div>
               </div>
             </div>
@@ -238,6 +238,18 @@
                   <span class="quality-badge" id="quality-badge"></span>
                 </div>
                 <p class="hint" id="quality-tip"></p>
+                <details class="explainer">
+                  <summary>Why does resolution matter?</summary>
+                  <p>A standee is printed many times bigger than your phone screen, so every printed inch
+                  needs enough pixels from your photo. The score compares your photo's pixels with the
+                  size you've chosen: <strong>90+ is great</strong>, 60+ good, 36+ fair, and below that it
+                  will likely look blurry or blocky.</p>
+                  <p>Original photos from a phone camera (3000–4000 px) score well. Screenshots and images
+                  saved from chat apps or social media are usually under 1000 px — those can't score above
+                  "Fair", whatever the size.</p>
+                  <p><strong>Tip:</strong> upload the original photo (not a screenshot or a forwarded copy),
+                  or choose a smaller size.</p>
+                </details>
                 <label class="consent" id="quality-consent" hidden>
                   <input type="checkbox" id="accept-low-quality" />
                   <span>I understand this photo may print <strong>blurry</strong> at this size, and that

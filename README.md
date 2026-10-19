@@ -99,7 +99,25 @@ two places:
 cd backend && npm test
 ```
 
-The tests use a throwaway in-memory database, so they never touch yours.
+The tests never touch your dev database. By default they use a throwaway
+in-memory one. To run them against real Postgres, create a **separate**
+test database (as a Postgres user that can create databases) and point
+`TEST_DATABASE_URL` at it in `backend/.env.test` (git-ignored):
+
+```bash
+createdb cutout_website_test
+echo 'TEST_DATABASE_URL=postgres://<user>:<password>@localhost:5432/cutout_website_test' > backend/.env.test
+```
+
+The suite refuses any database whose name doesn't end in `_test`.
+
+**Security settings** (all in `backend/.env.example`):
+- `TRUST_PROXY` is the number of proxies in front: 0 locally, 1 behind Caddy.
+- `CLIENT_IP_HEADER` is only for when Cloudflare is in front (e.g.
+  `cf-connecting-ip`); leave it unset otherwise.
+- `UPLOAD_MAX_MB` defaults to 18, the most that can still be emailed to the
+  printer.
+- The admin page sends `ADMIN_TOKEN` as `Authorization: Bearer`.
 
 ### 3. Admin page
 
@@ -119,7 +137,9 @@ openssl rand -base64 48   # → FILE_LINK_SECRET (a different value)
 
 In `backend/.env` on the server: `NODE_ENV=production`, both secrets above
 (the server refuses to start if either is missing, a dev default, or
-under 32 characters), `HOST=127.0.0.1`, `TRUST_PROXY=loopback`, and
+under 32 characters), `STRIPE_WEBHOOK_SECRET`, `DATABASE_URL`, `HOST=127.0.0.1`,
+`TRUST_PROXY=1` (one proxy, Caddy, in front; it sets which IP the rate
+limits see), and
 `SITE_URL=https://<your domain>`, and `FULFILLMENT_EMAIL` (the server
 refuses to start in production without these two, or without the secrets).
 
