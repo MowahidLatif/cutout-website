@@ -8,6 +8,31 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Print quality: how many of the photo's pixels land on each printed inch.
+ * Standees are seen from a few feet away, so these are lower than paper
+ * print standards. Identical copy in frontend/js/pricing.js.
+ *
+ *   great ≥ 50 ppi · good ≥ 30 · fair ≥ 18 · low below that
+ *
+ * @param {Object} params
+ * @param {number} params.widthPx  stored image width in pixels
+ * @param {number} params.heightPx stored image height in pixels
+ * @param {number} params.heightIn printed height in inches
+ * @param {number|null} [params.widthIn] printed width; defaults to the photo's proportions
+ * @returns {{ ppi: number, grade: "great"|"good"|"fair"|"low" }}
+ */
+function printQuality({ widthPx, heightPx, heightIn, widthIn }) {
+  const printedWidth = widthIn || (heightIn * widthPx) / heightPx;
+  const ppi = Math.round(Math.min(widthPx / printedWidth, heightPx / heightIn));
+  return { ppi, grade: qualityGrade(ppi) };
+}
+
+/** @returns {"great"|"good"|"fair"|"low"} */
+function qualityGrade(ppi) {
+  return ppi >= 50 ? "great" : ppi >= 30 ? "good" : ppi >= 18 ? "fair" : "low";
+}
+
 /** Every price in the database, and every Stripe charge, is in this currency. */
 const CURRENCY = "CAD";
 
@@ -175,6 +200,8 @@ async function calculateOrderShipping({ country, items }) {
 
 module.exports = {
   CURRENCY,
+  printQuality,
+  qualityGrade,
   HEIGHT_RANGE_IN,
   sizeTierForHeight,
   getPricingConfig,

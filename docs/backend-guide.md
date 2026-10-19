@@ -240,10 +240,28 @@ confirmation email includes it.
 ## Image uploads & storage
 
 - `POST /api/uploads` (multer, in memory) → `uploads.processUpload`. It
-  checks the type (by contents, via `sharp`), size and minimum resolution,
-  bakes in the EXIF rotation, strips EXIF/GPS (keeping the colour profile),
-  and saves under a random key. Orders store only that key
-  (`order_items.image_key`).
+  accepts **any photo or a PDF**, identified by the decoded contents:
+  - JPEG, PNG and WebP are kept as they are.
+  - GIF, TIFF and AVIF become JPEG (PNG if transparent).
+  - HEIC is decoded with `heic-decode` (libheif compiled to WebAssembly,
+    since the prebuilt `sharp` can't decode HEVC) and saved as JPEG.
+  - PDF: page 1 is rendered with `pdfjs-dist` + `@napi-rs/canvas` at about
+    6000 px on the long side (`isEvalSupported: false`, so no code from
+    the PDF is ever compiled).
+  - SVG is rejected.
+
+  It bakes in the EXIF rotation, strips EXIF/GPS (keeping the colour
+  profile), and saves under a random key. Orders store only that key
+  (`order_items.image_key`). The response carries a 24h `previewUrl` of the
+  processed image.
+- **No minimum resolution; print quality instead.** `printQuality()` in
+  `services/pricing.js` (mirrored in the frontend, with a parity test)
+  rates pixels per printed inch: great ≥ 50, good ≥ 30, fair ≥ 18,
+  otherwise low.
+  - `createOrder` reads each stored image's real size
+    (`storage.readImageSize`), so it never trusts the browser.
+  - It rejects a **low** item unless `acceptedLowQuality: true`.
+  - It stores the pixel size, ppi and confirmation (migration `007`).
 - `services/storage.js` is the **only** file that knows where images
   live: `STORAGE_DRIVER=disk` (default: `backend/storage/uploads/`) or
   `s3` (production: private `S3_BUCKET`, under `uploads/`). Nothing else
@@ -253,8 +271,8 @@ confirmation email includes it.
   HMAC-signed `GET /api/files/:key` link, valid for
   `DOWNLOAD_LINK_TTL_DAYS` (default 30). We don't use S3 presigned links
   directly because S3 caps them at 7 days. In s3 mode the route redirects
-  to a 5-minute presigned GET. `PUBLIC_API_URL` must be the backend's
-  public address, or the links in emails won't work.
+  to a 5-minute presigned GET. `SITE_URL` must be the site's public
+  address, or the links in emails won't work.
 - Known gaps: uploads that never become orders aren't cleaned up, and
   there's no rate limit on `POST /api/uploads` yet.
 
@@ -265,8 +283,11 @@ confirmation email includes it.
   minutes, in memory). Details are in `api-spec.md`. All of it lives in
   `routes/admin.js`, so there's no auth framework to maintain.
 - `server.js` refuses to start in production if `ADMIN_TOKEN` or
-  `FILE_LINK_SECRET` is missing, a dev default, or under 32 characters.
-  In dev it only warns.
+  `FILE_LINK_SECRET` is missing, a dev default, or under 32 characters;
+  if `FULFILLMENT_EMAIL` isn't an email address (paid orders would never
+  reach the supplier); or if `SITE_URL` isn't an `https://` address
+  (emails and Stripe would link to localhost). In dev it only warns about
+  the secrets.
 - Production runs behind **Caddy**, which terminates HTTPS:
   - `HOST=127.0.0.1`: the app only listens on localhost, so nobody can
     bypass Caddy and talk plain HTTP to port 4000.
@@ -278,6 +299,33 @@ confirmation email includes it.
   - With `NODE_ENV=production`, admin requests that didn't come over
     HTTPS are refused (403).
 
+## Labels (`services/catalog.js`)
+
+Emails and the Stripe payment page use customer-facing names, not stored
+values, from `catalog.js`: `MATERIAL_LABELS` (e.g. `coroplast` → "Premium
+Corrugated (corrugated plastic / Coroplast)"), `TIER_LABELS`,
+`TEXT_STYLE_LABELS` and `QUALITY_LABELS`. They must match the storefront's
+`SITE.materials` and friends; `test/material-integrity.test.js` fails if
+they drift. The Stripe parameters are built by the pure
+`buildSessionParams(order)` (`services/stripe.js`).
+
+## Tests
+
+```bash
+cd backend && npm test      # node --test "test/*.test.js"
+```
+
+These use Node's built-in test runner, with no framework. Tests that need
+a database get an in-process Postgres (`@electric-sql/pglite`, a dev
+dependency) with every migration applied, so they never touch your real
+database. They cover:
+- material/quantity integrity from the UI to `order_items` and Stripe
+- email content
+- print quality (browser = server)
+- the upload formats (including PDF and HEIC)
+- the low-quality confirmation
+- production startup checks
+
 ## Email (SES)
 
 `services/email.js` wraps SES. If `AWS_ACCESS_KEY_ID`,
@@ -286,9 +334,20 @@ dev), it `console.log`s what would have been sent instead of throwing.
 
 | Function | To | Contains |
 |---|---|---|
-| `sendFulfillmentEmail` | `FULFILLMENT_EMAIL` (skipped with a warning if unset) | full order details, shipping and total; per item the size, width, text elements and an expiring **image download link**; you forward it to the supplier |
-| `sendCustomerConfirmation` | the customer | the same order details, **without** download links |
+| `sendFulfillmentEmail` | `FULFILLMENT_EMAIL` | the full order; you forward it to the supplier |
+| `sendCustomerConfirmation` | the customer | the same details, plus the final-sale notice |
 | `sendShippedNotification` | the customer | sent when the status changes to `shipped` |
+
+**Both order emails list every item:**
+- quantity ("1 cutout" / "3 cutouts"), the material label, and the size tier
+- height × width
+- each text element ("Speech bubble: "…"")
+- print quality (and whether the customer accepted low quality)
+- an expiring image link
+
+Every link (order status, image, admin) is built from `SITE_URL`.
+`build*` functions return `{ to, subject, body }` without sending, so they
+can be tested.
 
 ## Environment variables
 
@@ -305,18 +364,17 @@ All are in `backend/.env.example` with working dev defaults, except
 | `DATABASE_URL` | (none) | Postgres connection string |
 | `STRIPE_SECRET_KEY` | (none) | required for checkout sessions |
 | `STRIPE_WEBHOOK_SECRET` | (none) | verifies webhook signatures |
-| `STRIPE_SUCCESS_URL` | `${PUBLIC_API_URL}/order-status?order={ORDER_ID}` | redirect after payment; `{ORDER_ID}` is substituted |
-| `STRIPE_CANCEL_URL` | `${PUBLIC_API_URL}/checkout` | redirect if the customer cancels (back to the cart) |
+| `STRIPE_SUCCESS_URL` | `${SITE_URL}/order-status?order={ORDER_ID}` | redirect after payment; `{ORDER_ID}` is substituted |
+| `STRIPE_CANCEL_URL` | `${SITE_URL}/checkout` | redirect if the customer cancels (back to the cart) |
 | `STORAGE_DRIVER` | `disk` | `disk` or `s3` |
 | `UPLOAD_DIR` | `./storage/uploads` | disk driver location, relative to `backend/` |
 | `S3_BUCKET` | (none) | s3 driver bucket (private) |
 | `AWS_REGION` | `us-east-1` | S3 and SES region |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (none) | AWS credentials; without them email logs to the console |
 | `UPLOAD_MAX_MB` | `25` | upload size cap |
-| `UPLOAD_MIN_LONG_EDGE_PX` | `2000` | minimum long edge, after rotation |
-| `PUBLIC_API_URL` | `http://localhost:4000` | the site's public address (site and API share it): download links and the default Stripe return URLs |
+| `SITE_URL` | `http://localhost:4000` | the site's public address (site and API share it), used for every link we send: status and image links in emails, and the default Stripe return URLs. Must be `https://` in production. `PUBLIC_API_URL` (its old name) is still read as a fallback |
 | `FILE_LINK_SECRET` | dev default | HMAC key for download links (32+ characters in production) |
 | `DOWNLOAD_LINK_TTL_DAYS` | `30` | download link lifetime |
 | `ADMIN_TOKEN` | dev default | admin shared secret (32+ characters in production) |
-| `FULFILLMENT_EMAIL` | (none) | where paid-order emails go |
+| `FULFILLMENT_EMAIL` | (none) | where paid-order emails go; **required in production** |
 | `SES_FROM_EMAIL` | (none) | SES sender address |

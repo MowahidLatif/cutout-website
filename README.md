@@ -64,7 +64,7 @@ fresh on every request, so after editing HTML/CSS/JS just refresh the
 browser. Backend changes need a restart (automatic with `npm run dev`).
 
 After paying, Stripe returns the customer to `/order-status?order=…`, or to
-`/checkout` if they cancel. These are built from `PUBLIC_API_URL`, which
+`/checkout` if they cancel. These are built from `SITE_URL`, which
 defaults to `http://localhost:4000`. No `FRONTEND_ORIGIN` / CORS setting is
 needed, since everything is on one origin.
 
@@ -93,6 +93,14 @@ two places:
 - `frontend/img/*.svg` are generated illustrations. Replace them with real
   photos (and update the `src`).
 
+### Run the tests
+
+```bash
+cd backend && npm test
+```
+
+The tests use a throwaway in-memory database, so they never touch yours.
+
 ### 3. Admin page
 
 Open http://localhost:4000/admin (it isn't linked from the site nav). Enter
@@ -112,7 +120,8 @@ openssl rand -base64 48   # → FILE_LINK_SECRET (a different value)
 In `backend/.env` on the server: `NODE_ENV=production`, both secrets above
 (the server refuses to start if either is missing, a dev default, or
 under 32 characters), `HOST=127.0.0.1`, `TRUST_PROXY=loopback`, and
-`PUBLIC_API_URL=https://<your domain>`.
+`SITE_URL=https://<your domain>`, and `FULFILLMENT_EMAIL` (the server
+refuses to start in production without these two, or without the secrets).
 
 Put Caddy in front for HTTPS. It gets certificates automatically and
 forwards `X-Forwarded-For`/`X-Forwarded-Proto` by default. Express serves

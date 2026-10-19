@@ -104,9 +104,24 @@
     return "xl";
   }
 
+  /**
+   * Print quality: how many of the photo's pixels land on each printed inch
+   * (great ≥ 50 ppi · good ≥ 30 · fair ≥ 18 · low below). Identical copy in
+   * backend/src/services/pricing.js, which re-checks it when the order is placed.
+   *
+   * @param {{ widthPx:number, heightPx:number, heightIn:number, widthIn?:number|null }} params
+   * @returns {{ ppi: number, grade: "great"|"good"|"fair"|"low" }}
+   */
+  function printQuality({ widthPx, heightPx, heightIn, widthIn }) {
+    const printedWidth = widthIn || (heightIn * widthPx) / heightPx;
+    const ppi = Math.round(Math.min(widthPx / printedWidth, heightPx / heightIn));
+    const grade = ppi >= 50 ? "great" : ppi >= 30 ? "good" : ppi >= 18 ? "fair" : "low";
+    return { ppi, grade };
+  }
+
   function round2(n) {
     return Math.round((n + Number.EPSILON) * 100) / 100;
   }
 
-  window.Pricing = { calculatePrice, calculateOrderShipping, sizeTierForHeight };
+  window.Pricing = { calculatePrice, calculateOrderShipping, sizeTierForHeight, printQuality };
 })();

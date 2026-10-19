@@ -49,8 +49,10 @@ who produces and ships the product directly to the customer.
 - **No automated supplier integration.** Fulfillment is a manual email sent
   via SES when an order is paid; a human forwards it to the supplier.
 - **No background removal / image processing pipeline yet.** Uploads are
-  only validated (type by contents, size, min resolution) and
-  auto-rotated from EXIF. No other edits.
+  normalized: any photo (JPEG/PNG/WebP/GIF/TIFF/AVIF/HEIC) or PDF (page 1
+  rendered) is accepted, auto-rotated from EXIF, and given a print-quality
+  rating. There's no minimum resolution; low quality needs the customer's
+  confirmation. No other edits (no background removal).
 - **All prices and charges are CAD** (`CURRENCY` in
   `backend/src/services/pricing.js`). **All sales are final** (custom-made;
   free reprint if damaged), and checkout requires accepting that.

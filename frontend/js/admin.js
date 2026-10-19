@@ -180,6 +180,13 @@
           ${(item.textElements || [])
             .map((el) => `<p class="hint">Text (${escapeHtml(el.style)}): “${escapeHtml(el.text)}”</p>`)
             .join("")}
+          ${
+            item.printPpi
+              ? `<p class="hint">Print quality: ${escapeHtml(item.printPpi)} pixels per inch` +
+                ` (${escapeHtml(item.imageWidthPx)}×${escapeHtml(item.imageHeightPx)} px)` +
+                `${item.lowQualityAccepted ? " — <strong>low quality, customer accepted</strong>" : ""}</p>`
+              : ""
+          }
           <div class="item-link">${renderLink(item.downloadUrl, item.downloadExpiresAt)}</div>
         </div>`
         )

@@ -11,12 +11,14 @@ function getClient() {
   return stripeClient;
 }
 
-// Where Stripe sends the customer afterwards. The site is served by this
-// backend, so by default both are pages on PUBLIC_API_URL (the site's address).
-function siteUrl() {
-  return (process.env.PUBLIC_API_URL || "http://localhost:4000").replace(/\/$/, "");
-}
+const { siteUrl } = require("./site");
+const { MATERIAL_LABELS, TIER_LABELS, formatFeetInches } = require("./catalog");
 
+// Stripe's limit for a product description.
+const MAX_DESCRIPTION_LENGTH = 500;
+
+// Where Stripe sends the customer afterwards: pages on the site (SITE_URL)
+// unless overridden.
 function successUrl() {
   return process.env.STRIPE_SUCCESS_URL || `${siteUrl()}/order-status?order={ORDER_ID}`;
 }
@@ -25,14 +27,26 @@ function cancelUrl() {
   return process.env.STRIPE_CANCEL_URL || `${siteUrl()}/checkout`;
 }
 
-/**
- * Creates a Stripe Checkout Session for an order that's already been
- * priced server-side. Never pass a client-supplied amount here.
- */
-async function createCheckoutSession(order) {
-  const stripe = getClient();
+/** "7 × Life-size 5'8" × 4'3" — Premium Corrugated (corrugated plastic / Coroplast)" */
+function describeItem(item) {
+  const size = item.widthIn
+    ? `${formatFeetInches(item.heightIn)} × ${formatFeetInches(item.widthIn)}`
+    : `${formatFeetInches(item.heightIn)} tall`;
+  const material = MATERIAL_LABELS[item.material] || item.material;
+  return `${item.quantity} × ${TIER_LABELS[item.sizeTier] || item.sizeTier} ${size} — ${material}`;
+}
 
-  const session = await stripe.checkout.sessions.create({
+/**
+ * The Checkout Session parameters for an order that's already been priced
+ * server-side. Pure (no Stripe calls), so it can be tested. Never pass a
+ * client-supplied amount here.
+ */
+function buildSessionParams(order) {
+  let description = order.items.map(describeItem).join("; ");
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    description = description.slice(0, MAX_DESCRIPTION_LENGTH - 1) + "…";
+  }
+  return {
     mode: "payment",
     customer_email: order.customerEmail,
     line_items: [
@@ -44,9 +58,7 @@ async function createCheckoutSession(order) {
           currency: order.currency.toLowerCase(),
           product_data: {
             name: "Custom life-size standee order",
-            description: order.items
-              .map((i) => `${i.quantity}x ${i.sizeTier} / ${i.material}`)
-              .join(", "),
+            description,
           },
           // Stripe expects the smallest currency unit (cents).
           unit_amount: Math.round(order.totalPrice * 100),
@@ -66,9 +78,11 @@ async function createCheckoutSession(order) {
     success_url: successUrl().replace("{ORDER_ID}", order.id),
     cancel_url: cancelUrl(),
     metadata: { orderId: order.id },
-  });
+  };
+}
 
-  return session;
+async function createCheckoutSession(order) {
+  return getClient().checkout.sessions.create(buildSessionParams(order));
 }
 
 function constructWebhookEvent(rawBody, signature) {
@@ -80,4 +94,4 @@ function constructWebhookEvent(rawBody, signature) {
   );
 }
 
-module.exports = { createCheckoutSession, constructWebhookEvent };
+module.exports = { buildSessionParams, createCheckoutSession, constructWebhookEvent };

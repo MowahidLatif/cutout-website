@@ -71,6 +71,11 @@
     widthFt: $("width-ft"),
     widthInches: $("width-in"),
     widthHint: $("width-hint"),
+    qualityRow: $("quality-row"),
+    qualityBadge: $("quality-badge"),
+    qualityTip: $("quality-tip"),
+    qualityConsent: $("quality-consent"),
+    acceptLowQuality: $("accept-low-quality"),
     lockToggle: $("lock-toggle"),
     addText: $("add-text"),
     textList: $("text-list"),
@@ -125,6 +130,29 @@
   }
 
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  function browserCanPreview(file) {
+    const name = (file.name || "").toLowerCase();
+    if (file.type === "application/pdf" || name.endsWith(".pdf")) return false;
+    if (/hei[cf]/.test(file.type) || /\.hei[cf]$/.test(name)) return false;
+    return true;
+  }
+
+  /** Print quality at the current size, once the server has measured the photo. */
+  function qualityOf(design) {
+    if (!design.widthPx || !design.heightPx) return null;
+    return Pricing.printQuality({
+      widthPx: design.widthPx,
+      heightPx: design.heightPx,
+      heightIn: design.heightIn,
+      widthIn: widthOf(design),
+    });
+  }
+
+  function needsLowQualityOk(design) {
+    const q = qualityOf(design);
+    return Boolean(q && q.grade === "low" && !design.acceptedLowQuality);
+  }
 
   /** The design the controls are editing (or the draft, before any photo). */
   function active() {
@@ -257,6 +285,10 @@
       uploadPromise: null,
       imageKey: null,
       uploadError: null,
+      widthPx: null, // processed image size, from the server
+      heightPx: null,
+      note: null, // e.g. "Your PDF has 3 pages — we'll print page 1."
+      acceptedLowQuality: false,
       ...base,
       ...fields,
     };
@@ -282,7 +314,9 @@
         continue;
       }
       const design = newDesign({ file, objectUrl: URL.createObjectURL(file) });
-      design.src = design.objectUrl;
+      // Browsers can't display PDFs or HEIC as images: those show
+      // "Processing…" until the server's converted preview arrives.
+      if (browserCanPreview(file)) design.src = design.objectUrl;
       // The first photo of a batch keeps the draft's quantity; later ones start at 1,
       // trimmed if needed so the order stays within the total.
       design.quantity = clamp(design.quantity, 1, Math.max(1, SITE.maxOrderQuantity - cartTotals().quantity - trayQuantity()));
@@ -290,13 +324,15 @@
       if (added === 0) state.activeId = design.id;
       added += 1;
       startUpload(design);
-      readAspect(design.objectUrl).then(
-        (aspect) => {
-          design.aspect = aspect;
-          renderAll();
-        },
-        () => {}
-      );
+      if (design.src) {
+        readAspect(design.objectUrl).then(
+          (aspect) => {
+            if (!design.widthPx) design.aspect = aspect;
+            renderAll();
+          },
+          () => {}
+        );
+      }
     }
 
     const notes = [];
@@ -324,6 +360,13 @@
     design.uploadPromise = Api.upload("/uploads", formData).then(
       (result) => {
         design.imageKey = result.imageKey;
+        // The server's version is what gets printed (rotated, converted from
+        // PDF/HEIC), so show it and measure quality from its real pixel size.
+        design.widthPx = result.width;
+        design.heightPx = result.height;
+        design.aspect = result.width / result.height;
+        design.src = result.previewUrl;
+        design.note = result.note || null;
         renderAll();
       },
       (err) => {
@@ -378,8 +421,14 @@
   function designStatus(d) {
     if (d.isSample) return "Sample — preview only";
     if (d.uploadError) return d.uploadError;
-    if (!d.imageKey) return "Uploading…";
-    return widthProblem(d) ? "Check the size" : "✓ Uploaded";
+    if (!d.imageKey) return d.src ? "Uploading…" : "Processing…";
+    if (widthProblem(d)) return "Check the size";
+    const q = qualityOf(d);
+    if (q) {
+      const label = `Quality: ${SITE.qualityLabels[q.grade]} (${q.ppi} ppi)`;
+      return needsLowQualityOk(d) ? `${label} — confirm` : label;
+    }
+    return "✓ Uploaded";
   }
 
   function renderTray() {
@@ -399,11 +448,15 @@
     const cards = state.designs
       .map((d) => {
         const status = designStatus(d);
-        const hasError = Boolean(d.uploadError || (!d.isSample && widthProblem(d)));
+        const hasError = Boolean(d.uploadError || (!d.isSample && (widthProblem(d) || needsLowQualityOk(d))));
         return `
         <div class="tray-card${d.id === state.activeId ? " is-active" : ""}${hasError ? " has-error" : ""}" data-id="${d.id}" role="listitem">
           <button type="button" class="tray-card__select" aria-pressed="${d.id === state.activeId}" aria-label="Edit ${escapeHtml(d.name)}">
-            <img class="tray-card__thumb" src="${escapeHtml(d.src)}" alt="" />
+            ${
+              d.src
+                ? `<img class="tray-card__thumb" src="${escapeHtml(d.src)}" alt="" />`
+                : '<span class="tray-card__thumb tray-card__thumb--processing">Processing…</span>'
+            }
             <span class="tray-card__name">${escapeHtml(d.name)}</span>
             <span class="tray-card__status">${escapeHtml(status)}</span>
           </button>
@@ -633,7 +686,8 @@
     const d = active();
     const hasPhoto = Boolean(d.src);
     els.figure.hidden = !hasPhoto;
-    els.stageDropzone.hidden = hasPhoto;
+    // A PDF/HEIC still being processed has no picture yet, but isn't "empty".
+    els.stageDropzone.hidden = hasPhoto || state.designs.includes(d);
     els.sampleTag.hidden = !d.isSample;
     if (hasPhoto && els.img.getAttribute("src") !== d.src) els.img.src = d.src;
     els.photoActions.hidden = !state.designs.length;
@@ -753,6 +807,10 @@
     if (!state.pricingConfig) return "Loading prices…";
     const badSize = real.find((d) => widthProblem(d));
     if (badSize) return `${badSize.name}: ${widthProblem(badSize)}`;
+    const lowQuality = real.find(needsLowQualityOk);
+    if (lowQuality) {
+      return `${lowQuality.name} will print at low quality at this size — tick the box under "Choose your size", use a sharper photo, or pick a smaller size.`;
+    }
     const cart = cartTotals();
     if (cart.quantity + trayQuantity() > SITE.maxOrderQuantity) {
       return `An order can have at most ${SITE.maxOrderQuantity} cutouts (you'd have ${cart.quantity + trayQuantity()}, counting your cart).`;
@@ -783,12 +841,15 @@
     const items = await Promise.all(
       designs.map(async (d) => ({
         imageKey: d.imageKey,
-        thumbnail: await Cart.makeThumbnail(d.objectUrl),
+        thumbnail: await Cart.makeThumbnail(d.src),
         heightIn: d.heightIn,
         widthIn: widthOf(d),
         material: d.material,
         quantity: d.quantity,
         textElements: d.texts.filter((t) => t.text.trim()).map((t) => ({ style: t.style, text: t.text.trim() })),
+        widthPx: d.widthPx,
+        heightPx: d.heightPx,
+        acceptedLowQuality: d.acceptedLowQuality,
       }))
     );
     Cart.addMany(items);
@@ -803,6 +864,31 @@
     justAdded = true;
     els.priceNote.classList.add("is-success");
     els.priceNote.innerHTML = `${plural(items.length, "design")} added to your cart. <a href="checkout.html">Go to checkout →</a>`;
+  });
+
+  // ---------- Print quality (active design) ----------
+  const QUALITY_TIPS = {
+    great: "Sharp at this size.",
+    good: "Should look good at this size.",
+    fair: "May look a little soft up close. A sharper photo or a smaller size will help.",
+    low: "Likely to look blurry or pixelated at this size. Use a sharper or original photo, or choose a smaller size.",
+  };
+
+  function renderQuality(d) {
+    const q = qualityOf(d);
+    els.qualityRow.hidden = !q || d.isSample;
+    if (!q) return;
+    els.qualityBadge.className = `quality-badge is-${q.grade}`;
+    els.qualityBadge.textContent = `${SITE.qualityLabels[q.grade]} · ${q.ppi} pixels per inch`;
+    els.qualityTip.textContent = QUALITY_TIPS[q.grade] + (d.note ? ` ${d.note}` : "");
+    els.qualityConsent.hidden = q.grade !== "low";
+    els.qualityConsent.classList.toggle("has-error", q.grade === "low" && !d.acceptedLowQuality);
+    els.acceptLowQuality.checked = d.acceptedLowQuality;
+  }
+
+  els.acceptLowQuality.addEventListener("change", () => {
+    active().acceptedLowQuality = els.acceptLowQuality.checked;
+    renderAll();
   });
 
   // ---------- Render ----------
@@ -833,6 +919,8 @@
           : "Width is calculated from your photo's proportions once you add one."
         : "Proportions unlocked — the photo will be stretched to this width.");
     els.widthHint.style.color = problem ? "var(--error)" : "";
+
+    renderQuality(d);
 
     renderStage();
     renderPrice();

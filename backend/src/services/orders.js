@@ -1,5 +1,12 @@
 const pool = require("../db/pool");
-const { calculatePrice, calculateOrderShipping, sizeTierForHeight, HEIGHT_RANGE_IN, CURRENCY } = require("./pricing");
+const {
+  calculatePrice,
+  calculateOrderShipping,
+  sizeTierForHeight,
+  printQuality,
+  HEIGHT_RANGE_IN,
+  CURRENCY,
+} = require("./pricing");
 const storage = require("./storage");
 
 const VALID_MATERIALS = ["cardboard", "coroplast", "foam_board", "acrylic"];
@@ -110,10 +117,27 @@ async function createOrder(input) {
   const { customerEmail, customerPhone, shippingAddress, items } = input;
 
   // A well-formed key isn't enough — it must be a file we actually stored.
-  for (const item of items) {
+  // Its real pixel size (read from the file, never from the client) gives the
+  // print quality; a "low" rating needs the customer's explicit OK.
+  const imageSizes = [];
+  for (const [index, item] of items.entries()) {
     if (!(await storage.fileExists(item.imageKey))) {
       throw validationError("Uploaded photo not found. Please upload it again.");
     }
+    const size = await storage.readImageSize(item.imageKey);
+    const quality = printQuality({
+      widthPx: size.width,
+      heightPx: size.height,
+      heightIn: Number(item.heightIn),
+      widthIn: item.widthIn ? Number(item.widthIn) : null,
+    });
+    if (quality.grade === "low" && item.acceptedLowQuality !== true) {
+      throw validationError(
+        `Photo ${index + 1} will print at low quality at this size (${quality.ppi} pixels per inch). ` +
+          "Please confirm you accept that, use a sharper photo, or choose a smaller size."
+      );
+    }
+    imageSizes.push({ ...size, ppi: quality.ppi, lowAccepted: quality.grade === "low" });
   }
 
   // Recompute every item's price server-side — never trust a price from the client.
@@ -121,7 +145,7 @@ async function createOrder(input) {
   let subtotal = 0;
   let itemsTotal = 0;
 
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
     // The size tier (and so the price) follows from the height. Any
     // client-sent sizeTier is ignored so a 7 ft standee can't be priced as "small".
     const heightIn = Number(item.heightIn);
@@ -138,6 +162,7 @@ async function createOrder(input) {
       widthIn: item.widthIn === undefined || item.widthIn === null ? null : Number(item.widthIn),
       sizeTier,
       textElements,
+      image: imageSizes[index],
       price,
     });
     subtotal += price.subtotal;
@@ -183,8 +208,9 @@ async function createOrder(input) {
       await client.query(
         `INSERT INTO order_items
            (order_id, image_key, size_tier, material, height_in, width_in, text_elements,
-            quantity, unit_price, line_total, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            quantity, unit_price, line_total, notes,
+            image_width_px, image_height_px, print_ppi, low_quality_accepted)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [
           order.id,
           item.imageKey,
@@ -197,6 +223,10 @@ async function createOrder(input) {
           item.price.unitPrice,
           item.price.total,
           item.notes || null,
+          item.image.width,
+          item.image.height,
+          item.image.ppi,
+          item.image.lowAccepted,
         ]
       );
     }
@@ -262,6 +292,10 @@ async function getOrderById(orderId, { email } = {}) {
       heightIn: Number(i.height_in),
       widthIn: i.width_in === null || i.width_in === undefined ? null : Number(i.width_in),
       textElements: i.text_elements || [],
+      imageWidthPx: i.image_width_px,
+      imageHeightPx: i.image_height_px,
+      printPpi: i.print_ppi,
+      lowQualityAccepted: Boolean(i.low_quality_accepted),
       quantity: i.quantity,
       unitPrice: Number(i.unit_price),
       lineTotal: Number(i.line_total),

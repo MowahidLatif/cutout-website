@@ -13,6 +13,8 @@ const path = require("path");
 const crypto = require("crypto");
 const { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const sharp = require("sharp");
+const { siteUrl } = require("./site");
 
 const DEV_LINK_SECRET = "dev-only-change-me";
 const KEY_PATTERN = /^[0-9a-f-]{36}\.(jpg|png|webp)$/;
@@ -116,17 +118,39 @@ function sign(key, exp) {
 
 /**
  * @param {string} key
+ * @param {Object} [options]
+ * @param {number} [options.ttlSeconds] link lifetime; defaults to DOWNLOAD_LINK_TTL_DAYS (30 days)
+ * @param {boolean} [options.relative] return "/api/files/…" (for the site's own pages)
  * @returns {{ url: string, expiresAt: string }}
  */
-function createDownloadUrl(key) {
+function createDownloadUrl(key, { ttlSeconds, relative = false } = {}) {
   assertValidKey(key);
-  const ttlDays = Number(process.env.DOWNLOAD_LINK_TTL_DAYS || 30);
-  const exp = Math.floor(Date.now() / 1000) + Math.round(ttlDays * 24 * 60 * 60);
-  const base = (process.env.PUBLIC_API_URL || "http://localhost:4000").replace(/\/$/, "");
+  const ttl = ttlSeconds || Math.round(Number(process.env.DOWNLOAD_LINK_TTL_DAYS || 30) * 24 * 60 * 60);
+  const exp = Math.floor(Date.now() / 1000) + ttl;
+  const link = `/api/files/${key}?exp=${exp}&sig=${sign(key, exp)}`;
   return {
-    url: `${base}/api/files/${key}?exp=${exp}&sig=${sign(key, exp)}`,
+    url: relative ? link : siteUrl() + link,
     expiresAt: new Date(exp * 1000).toISOString(),
   };
+}
+
+/**
+ * Pixel size of a stored image, read from the file itself (so the server
+ * never has to trust a size the browser reports).
+ *
+ * @returns {Promise<{ width: number, height: number }>}
+ */
+async function readImageSize(key) {
+  assertValidKey(key);
+  let input;
+  if (driver() === "s3") {
+    const obj = await getS3Client().send(new GetObjectCommand({ Bucket: s3Bucket(), Key: s3Key(key) }));
+    input = Buffer.from(await obj.Body.transformToByteArray());
+  } else {
+    input = path.join(uploadDir(), key);
+  }
+  const { width, height } = await sharp(input).metadata();
+  return { width, height };
 }
 
 function verifyDownloadSignature(key, exp, sig) {
@@ -144,5 +168,6 @@ module.exports = {
   fileExists,
   sendFile,
   createDownloadUrl,
+  readImageSize,
   verifyDownloadSignature,
 };

@@ -175,6 +175,17 @@ limits) and `makeThumbnail(src)`.
        and remove. Click a card to edit that photo; the size, text and
        material controls and the preview all follow the selected photo.
      - An "Add photos" tile shows how many more are allowed.
+   - **Any photo or PDF.** The picker accepts `image/*`, `.heic` and
+     PDFs. Browsers can't display PDF or HEIC, so those show
+     "Processing…" until the upload returns `previewUrl`. For every photo,
+     the studio then switches to the server's processed image, which is
+     rotated and is exactly what will print.
+   - **Print quality:** once the server reports the pixel size, each tray
+     card and the size card show a grade from `Pricing.printQuality` (Great
+     / Good / Fair / Low, in pixels per inch), live as the height changes,
+     with a tip. **Low** shows a required checkbox ("I understand this
+     photo may print blurry…"). Add to cart is blocked until it's ticked,
+     and the cart item carries `acceptedLowQuality`.
    - **Order limits:** at most `SITE.maxUniqueImages` (10) different photos
      and `SITE.maxOrderQuantity` (500) cutouts per order, counting what's
      already in the cart (`Cart.totals()`).
@@ -270,6 +281,9 @@ sizeTierForHeight(heightIn)
 
 calculatePrice({ sizeTier, material, quantity, rates, discountTiers })
 // → { baseRate, unitPrice, discountPct, subtotal, discountAmount, total } or null
+
+printQuality({ widthPx, heightPx, heightIn, widthIn })
+// → { ppi, grade: "great" | "good" | "fair" | "low" }  (≥50 / ≥30 / ≥18 / below)
 
 calculateOrderShipping({ country, items: [{ sizeTier, quantity }], shippingRates })
 // → one first-unit charge (largest size) + every other cutout at its size's

@@ -11,9 +11,9 @@ const webhookRoutes = require("./routes/webhooks");
 const fileRoutes = require("./routes/files");
 const { DEV_LINK_SECRET } = require("./services/storage");
 
-// These secrets have dev defaults so local setup needs no config, but a
-// production server must never run on them. Generate real ones with
-// `openssl rand -base64 48`.
+// Settings a production server must have. In development they have safe
+// defaults (or are optional), so local setup needs no config — there we only
+// warn. Generate secrets with `openssl rand -base64 48`.
 const MIN_SECRET_LENGTH = 32;
 const secretProblems = [
   ["ADMIN_TOKEN", adminRoutes.DEV_ADMIN_TOKEN],
@@ -29,12 +29,24 @@ const secretProblems = [
     return null;
   })
   .filter(Boolean);
-if (secretProblems.length > 0) {
-  const message = secretProblems.join("; ") + ". Generate one with: openssl rand -base64 48";
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(`Refusing to start: ${message}`);
+
+// Production-only: without these, paid orders would never reach the
+// supplier, and emails/Stripe would link customers to localhost.
+const productionProblems = [];
+if (!/^\S+@\S+\.\S+$/.test(process.env.FULFILLMENT_EMAIL || "")) {
+  productionProblems.push("FULFILLMENT_EMAIL is not set to an email address (paid orders would never reach the supplier)");
+}
+if (!/^https:\/\/\S+$/.test(process.env.SITE_URL || process.env.PUBLIC_API_URL || "")) {
+  productionProblems.push("SITE_URL is not set to the site's https:// address (emails and Stripe would link to localhost)");
+}
+
+if (process.env.NODE_ENV === "production") {
+  const problems = [...secretProblems, ...productionProblems];
+  if (problems.length > 0) {
+    throw new Error(`Refusing to start: ${problems.join("; ")}.`);
   }
-  console.warn(`[warn] ${message}`);
+} else if (secretProblems.length > 0) {
+  console.warn(`[warn] ${secretProblems.join("; ")}. Generate one with: openssl rand -base64 48`);
 }
 
 // Which proxies may tell us the client's real IP (X-Forwarded-For) and

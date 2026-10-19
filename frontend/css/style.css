@@ -1076,6 +1076,54 @@ p.lead {
   color: var(--ink-soft);
 }
 
+/* Print quality badge (studio) */
+.quality {
+  margin-top: 1.25rem;
+}
+
+.quality__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.quality-badge {
+  display: inline-block;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.quality-badge.is-great,
+.quality-badge.is-good {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.quality-badge.is-fair {
+  background: #fdf1d8;
+  color: #8a5a00;
+}
+
+.quality-badge.is-low {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.quality .hint {
+  margin: 0.5rem 0 0;
+}
+
+.tray-card__thumb--processing {
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 /* Controls column */
 .studio__controls {
   display: grid;

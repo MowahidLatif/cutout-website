@@ -69,6 +69,18 @@
     return { sizeTier, price };
   }
 
+  function qualityLine(item) {
+    if (!item.widthPx || !item.heightPx) return "";
+    const q = Pricing.printQuality({
+      widthPx: item.widthPx,
+      heightPx: item.heightPx,
+      heightIn: item.heightIn,
+      widthIn: item.widthIn,
+    });
+    const accepted = q.grade === "low" && item.acceptedLowQuality ? " (you confirmed)" : "";
+    return `<p class="cart-item__meta">Print quality: ${SITE.qualityLabels[q.grade]}${accepted}</p>`;
+  }
+
   /** What breaks the per-order limits, if anything (e.g. an old cart). */
   function limitProblem(items) {
     const { quantity, uniqueImages } = Cart.totals(items);
@@ -118,6 +130,7 @@
             <p class="cart-item__title">${escapeHtml(tier)} standee · ${escapeHtml(materialName(item.material))}</p>
             <p class="cart-item__meta">${escapeHtml(dims)}</p>
             ${texts ? `<p class="cart-item__meta">${texts}</p>` : ""}
+            ${qualityLine(item)}
           </div>
           <div class="cart-item__actions">
             ${quantitySelect(item, items)}
@@ -266,6 +279,7 @@
           material: item.material,
           quantity: item.quantity,
           textElements: item.textElements || [],
+          acceptedLowQuality: item.acceptedLowQuality === true,
         })),
       });
       const checkout = await Api.post(`/orders/${order.id}/checkout-session`, {});

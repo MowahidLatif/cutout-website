@@ -15,6 +15,7 @@ order by `npm run migrate`:
 | `004_order_status_events.sql` | Status-change audit log |
 | `005_item_customization.sql` | `order_items.width_in` + `order_items.text_elements` (studio customization) |
 | `006_cad_and_final_sale.sql` | `orders.currency`, final-sale acceptance columns, `payments.currency`, `schema_flags`; converts the USD seed prices to CAD (once) |
+| `007_print_quality.sql` | `order_items` image pixel size, `print_ppi`, `low_quality_accepted` |
 
 `migrate.js` re-runs **every** file on each run, so every migration must
 be idempotent (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`, guarded `DO`
@@ -52,6 +53,9 @@ blocks).
 | material | text (enum) | `cardboard`, `coroplast`, `foam_board`, `acrylic`; the storefront's "Premium Corrugated" is `coroplast` |
 | height_in | numeric(6,2) | chosen by the customer in the studio, 12–96 |
 | width_in | numeric(6,2) | nullable; printed width, 6–96. Auto from the photo's proportions, or set by hand if unlocked. Null on rows from before `005` |
+| image_width_px / image_height_px | integer | pixel size of the stored (processed) image, measured by the server; null before `007` |
+| print_ppi | integer | pixels per printed inch at the ordered size (great ≥ 50, good ≥ 30, fair ≥ 18, low below) |
+| low_quality_accepted | boolean | true when the item was low quality and the customer ticked "I understand this may print blurry" |
 | text_elements | jsonb | `[{ style: "bubble"\|"placard"\|"caption", text }]`, max 3, text 1–80 characters; default `[]` |
 | quantity | integer | `> 0` |
 | unit_price | numeric(10,2) | after the quantity discount; snapshot at order time (config may change later) |

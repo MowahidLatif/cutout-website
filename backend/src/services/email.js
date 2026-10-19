@@ -5,6 +5,16 @@
  */
 const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
 const { createDownloadUrl, isValidKey } = require("./storage");
+const { siteUrl } = require("./site");
+const { qualityGrade } = require("./pricing");
+const {
+  MATERIAL_LABELS,
+  TIER_LABELS,
+  TEXT_STYLE_LABELS,
+  QUALITY_LABELS,
+  formatFeetInches,
+  plural,
+} = require("./catalog");
 
 function sesConfigured() {
   return Boolean(
@@ -41,73 +51,114 @@ async function sendEmail({ to, subject, body }) {
   );
 }
 
-/**
- * @param {Object} order
- * @param {Object} [options]
- * @param {boolean} [options.downloadLinks] include expiring image download
- *   links — only for the supplier-bound fulfillment email
- */
-function formatOrderDetails(order, { downloadLinks = false } = {}) {
-  const itemLines = order.items
-    .map((i) => {
-      let line = `  - ${i.quantity}x ${i.sizeTier} / ${i.material}, height ${i.heightIn}in`;
-      if (i.widthIn) line += `, width ${i.widthIn}in`;
-      for (const el of i.textElements || []) {
-        line += `\n    text (${el.style}): "${el.text}"`;
-      }
-      if (downloadLinks && isValidKey(i.imageKey)) {
-        const { url, expiresAt } = createDownloadUrl(i.imageKey);
-        line += `\n    image download (expires ${expiresAt.slice(0, 10)}): ${url}`;
-      }
-      return line;
-    })
-    .join("\n");
-
-  const addr = order.shippingAddress;
-  return (
-    `Order ID: ${order.id}\n` +
-    `Customer: ${order.customerEmail} / ${order.customerPhone}\n` +
-    `Shipping to: ${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}, ${addr.city}, ${addr.region} ${addr.postalCode}, ${addr.country}\n` +
-    `Shipping: $${order.shippingAmount.toFixed(2)} ${order.currency}\n` +
-    `Total: $${order.totalPrice.toFixed(2)} ${order.currency}\n\n` +
-    `Items (${order.items.reduce((n, i) => n + i.quantity, 0)} cutouts, ${order.items.length} design${order.items.length === 1 ? "" : "s"}):\n${itemLines}`
-  );
+function money(amount, currency) {
+  return `$${Number(amount).toFixed(2)} ${currency}`;
 }
 
-async function sendFulfillmentEmail(order) {
-  const to = process.env.FULFILLMENT_EMAIL;
-  if (!to) {
-    console.warn("FULFILLMENT_EMAIL is not set — skipping fulfillment email.");
-    return;
+function statusLink(order) {
+  return `${siteUrl()}/order-status?order=${encodeURIComponent(order.id)}`;
+}
+
+/** Everything about one item that the customer and the supplier need. */
+function formatItem(item, index) {
+  const size = item.widthIn
+    ? `${formatFeetInches(item.heightIn)} tall × ${formatFeetInches(item.widthIn)} wide`
+    : `${formatFeetInches(item.heightIn)} tall`;
+  const lines = [
+    `${index + 1}. ${plural(item.quantity, "cutout")} — ${MATERIAL_LABELS[item.material] || item.material}`,
+    `   Size: ${TIER_LABELS[item.sizeTier] || item.sizeTier}, ${size}`,
+  ];
+  for (const el of item.textElements || []) {
+    lines.push(`   ${TEXT_STYLE_LABELS[el.style] || el.style}: "${el.text}"`);
   }
-  await sendEmail({
-    to,
+  if (item.printPpi) {
+    const grade = qualityGrade(item.printPpi);
+    lines.push(
+      `   Print quality: ${QUALITY_LABELS[grade]} (${item.printPpi} pixels per inch)` +
+        (item.lowQualityAccepted ? " — customer accepted low quality" : "")
+    );
+  }
+  if (isValidKey(item.imageKey)) {
+    const { url, expiresAt } = createDownloadUrl(item.imageKey);
+    lines.push(`   Image (link expires ${expiresAt.slice(0, 10)}): ${url}`);
+  }
+  return lines.join("\n");
+}
+
+function formatOrderDetails(order) {
+  const cutouts = order.items.reduce((n, i) => n + i.quantity, 0);
+  const addr = order.shippingAddress;
+  return [
+    `Order ID: ${order.id}`,
+    `Customer: ${order.customerEmail} / ${order.customerPhone}`,
+    `Shipping to: ${addr.line1}${addr.line2 ? ", " + addr.line2 : ""}, ${addr.city}, ${addr.region} ${addr.postalCode}, ${addr.country}`,
+    "",
+    `Items (${plural(cutouts, "cutout")}, ${plural(order.items.length, "design")}):`,
+    order.items.map(formatItem).join("\n\n"),
+    "",
+    `Shipping: ${money(order.shippingAmount, order.currency)}`,
+    `Total: ${money(order.totalPrice, order.currency)}`,
+  ].join("\n");
+}
+
+const FINAL_SALE_NOTICE =
+  "Your standee is made just for you, so all sales are final: we can't accept returns or give refunds. " +
+  "If it arrives damaged or misprinted, reply to this email with a photo within 7 days of delivery " +
+  "and we'll reprint it free.";
+
+function buildFulfillmentEmail(order) {
+  return {
+    to: process.env.FULFILLMENT_EMAIL,
     subject: `New paid order ${order.id} — forward to supplier`,
     body:
-      formatOrderDetails(order, { downloadLinks: true }) +
-      `\n\nLink expired? Open the order in admin.html and click "Generate fresh links".`,
-  });
+      formatOrderDetails(order) +
+      `\n\nOrder status: ${statusLink(order)}` +
+      `\nImage link expired? Open the order in the admin page (${siteUrl()}/admin) and click "Generate fresh links".`,
+  };
 }
 
-async function sendCustomerConfirmation(order) {
-  await sendEmail({
+function buildCustomerConfirmation(order) {
+  return {
     to: order.customerEmail,
     subject: "We've got your cutout order!",
     body:
       `Thanks for your order! Here's a summary:\n\n${formatOrderDetails(order)}\n\n` +
-      `Your standee is made just for you, so all sales are final: we can't accept returns or ` +
-      `give refunds. If it arrives damaged or misprinted, reply to this email with a photo ` +
-      `within 7 days of delivery and we'll reprint it free.\n\n` +
-      `You can check your order status any time at order-status.html using your order ID and email.`,
-  });
+      `${FINAL_SALE_NOTICE}\n\n` +
+      `Check your order status any time: ${statusLink(order)}\n` +
+      "(You'll need the email address you ordered with.)",
+  };
+}
+
+function buildShippedNotification(order) {
+  return {
+    to: order.customerEmail,
+    subject: "Your cutout has shipped!",
+    body: `Good news — order ${order.id} is on its way.\n\nTrack its status: ${statusLink(order)}`,
+  };
+}
+
+async function sendFulfillmentEmail(order) {
+  if (!process.env.FULFILLMENT_EMAIL) {
+    // Only possible outside production: production refuses to start without it.
+    console.warn("FULFILLMENT_EMAIL is not set — skipping fulfillment email.");
+    return;
+  }
+  await sendEmail(buildFulfillmentEmail(order));
+}
+
+async function sendCustomerConfirmation(order) {
+  await sendEmail(buildCustomerConfirmation(order));
 }
 
 async function sendShippedNotification(order) {
-  await sendEmail({
-    to: order.customerEmail,
-    subject: "Your cutout has shipped!",
-    body: `Good news — order ${order.id} is on its way.`,
-  });
+  await sendEmail(buildShippedNotification(order));
 }
 
-module.exports = { sendFulfillmentEmail, sendCustomerConfirmation, sendShippedNotification };
+module.exports = {
+  buildFulfillmentEmail,
+  buildCustomerConfirmation,
+  buildShippedNotification,
+  sendFulfillmentEmail,
+  sendCustomerConfirmation,
+  sendShippedNotification,
+};

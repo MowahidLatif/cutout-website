@@ -57,12 +57,20 @@ A multipart form with one file field named `image`. Every upload goes
 through the backend, whichever storage driver is active, so it can be
 checked and cleaned up:
 
-- **Type:** JPEG, PNG or WebP, detected by decoding the file contents. The
-  file name and Content-Type are ignored. HEIC gets a specific "export as
-  JPEG" message.
+- **Type** (detected from the file contents; the file name and Content-Type
+  are ignored):
+  - **JPEG, PNG, WebP:** kept as they are.
+  - **GIF** (first frame), **TIFF**, **AVIF:** converted to JPEG (or PNG if
+    transparent).
+  - **HEIC** (iPhone): converted to JPEG.
+  - **PDF:** page 1 rendered to a PNG about 6000 px on its long side. A
+    multi-page PDF returns a `note`. A password-protected or broken PDF is
+    a 400.
+  - **SVG** and anything else: 400.
 - **Size:** at most `UPLOAD_MAX_MB` (default 25).
-- **Resolution:** the long edge (after rotation) must be at least
-  `UPLOAD_MIN_LONG_EDGE_PX` (default 2000).
+- **No minimum resolution.** The response includes the pixel size, and the
+  studio shows the print quality. A **low** rating has to be confirmed per
+  item when ordering (see `POST /orders`).
 - **Rotation:** the EXIF orientation is baked into the pixels, so sideways
   phone photos print upright. EXIF (including GPS) is stripped, and the
   colour profile is kept.
@@ -70,8 +78,16 @@ checked and cleaned up:
 
 Response (201):
 ```json
-{ "data": { "imageKey": "3f2b…0b3c.jpg", "width": 3024, "height": 4032 }, "error": null }
+{ "data": {
+    "imageKey": "3f2b…0b3c.jpg", "width": 3024, "height": 4032,
+    "previewUrl": "/api/files/3f2b…0b3c.jpg?exp=…&sig=…",
+    "note": null
+  }, "error": null }
 ```
+`previewUrl` is a 24-hour signed link to the **processed** image (rotated,
+converted from PDF/HEIC). The studio displays this, since browsers can't
+show PDF or HEIC files as images. `note` is set for multi-page PDFs, e.g.
+"Your PDF has 3 pages — we'll print page 1." 
 
 Any failed check, a missing file, or a field not named `image` is a 400
 `VALIDATION_ERROR`. This endpoint is public and not rate-limited yet (a
@@ -122,6 +138,11 @@ Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
   - `heightIn`: 12–96 (1–8 ft).
   - `widthIn` (optional): 6–96. The studio sends the printed width, either
     auto-calculated from the photo's proportions or set by hand.
+  - `acceptedLowQuality` (optional, boolean): required (`true`) when the
+    photo would print at **low** quality at this size. The server measures
+    the stored image itself: `ppi = min(pixelWidth / widthIn, pixelHeight / heightIn)`
+    gives great ≥ 50, good ≥ 30, fair ≥ 18, otherwise low. It stores the
+    pixel size, the ppi and the confirmation on the item.
   - `textElements` (optional): up to 3 items of
     `{ style: "bubble" | "placard" | "caption", text: 1–80 characters }`.
     Text is trimmed.
@@ -171,6 +192,7 @@ Response: the full order.
   "items": [
     { "id": "…", "imageKey": "….jpg", "sizeTier": "life_size", "material": "coroplast",
       "heightIn": 68, "widthIn": 51, "textElements": [{ "style": "bubble", "text": "Happy 40th, Dave!" }],
+      "imageWidthPx": 3024, "imageHeightPx": 4032, "printPpi": 59, "lowQualityAccepted": false,
       "quantity": 3, "unitPrice": 76, "lineTotal": 228 }
   ]
 }

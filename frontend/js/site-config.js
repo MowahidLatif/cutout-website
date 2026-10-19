@@ -52,10 +52,16 @@
 
     // Material catalogue. `id` is the backend material value.
     materials: [
-      { id: "coroplast", name: "Premium Corrugated", detail: '3/16" printed board with fold-out easel' },
+      // Corrugated *plastic*. Backend label: MATERIAL_LABELS.coroplast in
+      // backend/src/services/catalog.js (a test keeps the two in step).
+      { id: "coroplast", name: "Premium Corrugated", detail: "Corrugated plastic (Coroplast) with fold-out easel" },
       { id: "foam_board", name: "Foam Board", detail: "Lightweight, ultra-smooth finish", comingSoon: true },
       { id: "acrylic", name: "Acrylic", detail: "Glossy, weatherproof, built to last", comingSoon: true },
     ],
+
+    // Print quality grades (pixels per printed inch) — thresholds live in
+    // js/pricing.js printQuality(), mirrored in the backend.
+    qualityLabels: { great: "Great", good: "Good", fair: "Fair", low: "Low" },
 
     tierLabels: {
       small: "Small",
