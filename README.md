@@ -24,6 +24,18 @@ See `CLAUDE.md` and `docs/` for the full spec — this README is just the
   path in `frontend/js/background-removal.js` at them, and remove those
   hosts from the CSP in `backend/src/security.js`.
 
+## Configuration and secrets
+
+- **Backend:** every setting comes from `backend/.env` (copy
+  `.env.example`; `.env` is gitignored) and is read in one place,
+  `backend/src/config.js`. That includes Stripe and AWS keys, the admin
+  token and the link-signing secret.
+- **Frontend:** non-secret values (the API path `/api`, CDN URLs,
+  storefront text) are in `frontend/js/site-config.js`. Nothing in
+  `frontend/` can be secret, because the browser downloads all of it. The
+  site and API share one origin, so no backend hostname appears in the
+  frontend.
+
 ## Running locally
 
 ### 1. Database

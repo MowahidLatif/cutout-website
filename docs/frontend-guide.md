@@ -39,7 +39,9 @@ frontend/
 │                          replace with real photos
 └── js/
     ├── icons.js          — inline SVG icon sprite; first script in <body>
-    ├── site-config.js    — window.SITE: every hard-coded storefront value
+    ├── site-config.js    — window.SITE: every hard-coded storefront value,
+    │                       the API base URL and the background remover's
+    │                       pinned URLs (loaded by every page)
     ├── pricing.js        — window.Pricing: sizeTierForHeight, calculatePrice,
     │                       calculateOrderShipping (mirror of the backend)
     ├── api.js            — window.Api: tiny fetch() wrapper
@@ -57,6 +59,15 @@ Keep JS as plain `<script src="...">` tags; no modules or bundler are
 required. Script order matters: `icons.js` goes first in `<body>`, then at
 the end `site-config.js` → `pricing.js` → `api.js` → `cart.js` →
 `layout.js` → the page's own script (each page loads only what it uses).
+Every page loads `site-config.js` first, because `api.js` and
+`background-removal.js` read from it.
+
+**Config and secrets:**
+- URLs, endpoints and constants go in `js/site-config.js`, not in page
+  scripts.
+- Nothing in `frontend/` is secret, and nothing can be: the browser
+  downloads all of it. Secrets live only in `backend/.env`.
+- The only backend address the browser knows is the relative `/api`.
 
 ## Placeholders: replace before launch
 
@@ -158,10 +169,11 @@ zip).
 **No inline scripts:** the Content-Security-Policy blocks them, so page
 logic always lives in `js/*.js` files.
 
-- Calls go to same-origin `/api`, both locally (http://localhost:4000)
-  and in production behind Caddy. `window.API_BASE_URL` remains as an
-  escape hatch only if the frontend is ever hosted on another origin, in
-  which case also set `FRONTEND_ORIGIN` on the backend for CORS.
+- Calls go to `SITE.apiBaseUrl` (`js/site-config.js`), which is the
+  same-origin `/api`, both locally (http://localhost:4000) and in production
+  behind Caddy. Only if the frontend is ever hosted on another origin:
+  change it to the API's full URL and set `FRONTEND_ORIGIN` on the backend
+  for CORS.
 - JSON bodies get `Content-Type: application/json`. `upload` sends
   `FormData` and lets the browser set the multipart boundary.
 - On success it returns the envelope's `data`. On failure it throws an

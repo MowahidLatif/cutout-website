@@ -5,7 +5,7 @@
  */
 const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
 const { createDownloadUrl, isValidKey } = require("./storage");
-const { siteUrl } = require("./site");
+const config = require("../config");
 const { qualityGrade } = require("./pricing");
 const {
   MATERIAL_LABELS,
@@ -16,24 +16,16 @@ const {
   plural,
 } = require("./catalog");
 
-function sesConfigured() {
-  return Boolean(
-    process.env.AWS_ACCESS_KEY_ID &&
-      process.env.AWS_SECRET_ACCESS_KEY &&
-      process.env.SES_FROM_EMAIL
-  );
-}
-
 let sesClient = null;
 function getClient() {
   if (!sesClient) {
-    sesClient = new SESClient({ region: process.env.AWS_REGION || "us-east-1" });
+    sesClient = new SESClient({ region: config.awsRegion });
   }
   return sesClient;
 }
 
 async function sendEmail({ to, subject, body }) {
-  if (!sesConfigured()) {
+  if (!config.sesConfigured) {
     console.log(`[email:dev] To: ${to}\nSubject: ${subject}\n\n${body}\n`);
     return;
   }
@@ -41,7 +33,7 @@ async function sendEmail({ to, subject, body }) {
   const client = getClient();
   await client.send(
     new SendEmailCommand({
-      Source: process.env.SES_FROM_EMAIL,
+      Source: config.sesFromEmail,
       Destination: { ToAddresses: [to] },
       Message: {
         Subject: { Data: subject },
@@ -56,7 +48,7 @@ function money(amount, currency) {
 }
 
 function statusLink(order) {
-  return `${siteUrl()}/order-status?order=${encodeURIComponent(order.id)}`;
+  return `${config.siteUrl}/order-status?order=${encodeURIComponent(order.id)}`;
 }
 
 /** Everything about one item that the customer and the supplier need. */
@@ -114,12 +106,12 @@ const FINAL_SALE_NOTICE =
 
 function buildFulfillmentEmail(order) {
   return {
-    to: process.env.FULFILLMENT_EMAIL,
+    to: config.fulfillmentEmail,
     subject: `New paid order ${order.id} — forward to supplier`,
     body:
       formatOrderDetails(order) +
       `\n\nOrder status: ${statusLink(order)}` +
-      `\nImage link expired? Open the order in the admin page (${siteUrl()}/admin) and click "Generate fresh links".`,
+      `\nImage link expired? Open the order in the admin page (${config.siteUrl}/admin) and click "Generate fresh links".`,
   };
 }
 
@@ -152,7 +144,7 @@ function buildShippedNotification(order) {
 }
 
 async function sendFulfillmentEmail(order) {
-  if (!process.env.FULFILLMENT_EMAIL) {
+  if (!config.fulfillmentEmail) {
     // Only possible outside production: production refuses to start without it.
     console.warn("FULFILLMENT_EMAIL is not set — skipping fulfillment email.");
     return;

@@ -5,6 +5,7 @@
  */
 const helmet = require("helmet");
 const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
+const config = require("./config");
 const { fail, appError } = require("./routes/_respond");
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
@@ -14,7 +15,7 @@ const FIFTEEN_MINUTES = 15 * 60 * 1000;
  * behind Caddy). Express then takes the client IP from that many
  * X-Forwarded-For hops; anything a client adds beyond that is ignored.
  */
-function trustProxySetting(value = process.env.TRUST_PROXY) {
+function trustProxySetting(value = config.trustProxy) {
   if (value === undefined || value === "" || value === "false") return 0;
   if (value === "true") return true;
   if (/^\d+$/.test(value)) return Number(value);
@@ -27,7 +28,7 @@ function trustProxySetting(value = process.env.TRUST_PROXY) {
  * a proxy really is in front, otherwise anyone can fake it.
  */
 function clientIp(req) {
-  const header = process.env.CLIENT_IP_HEADER;
+  const header = config.clientIpHeader;
   if (header) {
     const value = req.get(header);
     if (value) return value.split(",")[0].trim();
@@ -76,18 +77,19 @@ const limits = {
  * <script>. Inline style="" attributes are allowed (used across the pages).
  */
 function securityHeaders() {
-  const production = process.env.NODE_ENV === "production";
+  const production = config.production;
   const imgSrc = ["'self'", "data:", "blob:"];
-  if (process.env.STORAGE_DRIVER === "s3" && process.env.S3_BUCKET) {
+  if (config.storageDriver === "s3" && config.s3Bucket) {
     // Image links redirect to short-lived S3 URLs on the bucket's own origin.
-    imgSrc.push(`https://${process.env.S3_BUCKET}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com`);
+    imgSrc.push(`https://${config.s3Bucket}.s3.${config.awsRegion}.amazonaws.com`);
   }
   return helmet({
     contentSecurityPolicy: {
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
-        // jsDelivr serves the in-browser background remover (Transformers.js,
+        // jsDelivr serves the in-browser background remover (its URLs are in
+        // frontend/js/site-config.js, SITE.backgroundRemoval — keep in sync) (Transformers.js,
         // pinned); 'wasm-unsafe-eval' lets it run its WebAssembly model runtime,
         // and blob: is how that runtime loads its own (jsDelivr-fetched) loader.
         // A blob: script can only be created by JS already running on the page.

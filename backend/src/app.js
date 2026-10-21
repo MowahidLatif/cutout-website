@@ -6,6 +6,7 @@
 const path = require("path");
 const express = require("express");
 const cors = require("cors");
+const config = require("./config");
 const { fail, appError } = require("./routes/_respond");
 const { trustProxySetting, limits, securityHeaders } = require("./security");
 
@@ -24,8 +25,8 @@ function createApp() {
   // The site is served by this same app (below), so the browser calls the
   // API on the same origin and no CORS is needed. Only if you deliberately
   // host the frontend somewhere else, set FRONTEND_ORIGIN to allow it.
-  if (process.env.FRONTEND_ORIGIN) {
-    app.use(cors({ origin: process.env.FRONTEND_ORIGIN }));
+  if (config.frontendOrigin) {
+    app.use(cors({ origin: config.frontendOrigin }));
   }
 
   // Stripe webhooks need the raw body for signature verification, so this

@@ -14,18 +14,17 @@ const crypto = require("crypto");
 const { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const sharp = require("sharp");
-const { siteUrl } = require("./site");
+const config = require("../config");
 
-const DEV_LINK_SECRET = "dev-only-change-me";
 const KEY_PATTERN = /^[0-9a-f-]{36}\.(jpg|png|webp)$/;
 
 function driver() {
-  return process.env.STORAGE_DRIVER || "disk";
+  return config.storageDriver;
 }
 
 function uploadDir() {
   // Relative paths resolve against backend/, not the process cwd.
-  return path.resolve(__dirname, "../..", process.env.UPLOAD_DIR || "./storage/uploads");
+  return path.resolve(__dirname, "../..", config.uploadDir);
 }
 
 function isValidKey(key) {
@@ -42,16 +41,16 @@ function assertValidKey(key) {
 let s3Client = null;
 function getS3Client() {
   if (!s3Client) {
-    s3Client = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
+    s3Client = new S3Client({ region: config.awsRegion });
   }
   return s3Client;
 }
 
 function s3Bucket() {
-  if (!process.env.S3_BUCKET) {
+  if (!config.s3Bucket) {
     throw new Error("S3_BUCKET is not set (required when STORAGE_DRIVER=s3).");
   }
-  return process.env.S3_BUCKET;
+  return config.s3Bucket;
 }
 
 function s3Key(key) {
@@ -108,12 +107,8 @@ async function sendFile(res, key) {
 }
 
 // ---------- Signed download links ----------
-function linkSecret() {
-  return process.env.FILE_LINK_SECRET || DEV_LINK_SECRET;
-}
-
 function sign(key, exp) {
-  return crypto.createHmac("sha256", linkSecret()).update(`${key}.${exp}`).digest("hex");
+  return crypto.createHmac("sha256", config.fileLinkSecret).update(`${key}.${exp}`).digest("hex");
 }
 
 /**
@@ -125,11 +120,11 @@ function sign(key, exp) {
  */
 function createDownloadUrl(key, { ttlSeconds, relative = false } = {}) {
   assertValidKey(key);
-  const ttl = ttlSeconds || Math.round(Number(process.env.DOWNLOAD_LINK_TTL_DAYS || 30) * 24 * 60 * 60);
+  const ttl = ttlSeconds || Math.round(config.downloadLinkTtlDays * 24 * 60 * 60);
   const exp = Math.floor(Date.now() / 1000) + ttl;
   const link = `/api/files/${key}?exp=${exp}&sig=${sign(key, exp)}`;
   return {
-    url: relative ? link : siteUrl() + link,
+    url: relative ? link : config.siteUrl + link,
     expiresAt: new Date(exp * 1000).toISOString(),
   };
 }
@@ -168,7 +163,6 @@ function verifyDownloadSignature(key, exp, sig) {
 }
 
 module.exports = {
-  DEV_LINK_SECRET,
   isValidKey,
   saveFile,
   fileExists,

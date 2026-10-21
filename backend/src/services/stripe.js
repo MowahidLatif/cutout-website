@@ -1,31 +1,21 @@
 const Stripe = require("stripe");
+const config = require("../config");
 
 let stripeClient = null;
 function getClient() {
   if (!stripeClient) {
-    if (!process.env.STRIPE_SECRET_KEY) {
+    if (!config.stripeSecretKey) {
       throw new Error("STRIPE_SECRET_KEY is not set.");
     }
-    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);
+    stripeClient = new Stripe(config.stripeSecretKey);
   }
   return stripeClient;
 }
 
-const { siteUrl } = require("./site");
 const { MATERIAL_LABELS, TIER_LABELS, formatFeetInches } = require("./catalog");
 
 // Stripe's limit for a product description.
 const MAX_DESCRIPTION_LENGTH = 500;
-
-// Where Stripe sends the customer afterwards: pages on the site (SITE_URL)
-// unless overridden.
-function successUrl() {
-  return process.env.STRIPE_SUCCESS_URL || `${siteUrl()}/order-status?order={ORDER_ID}`;
-}
-
-function cancelUrl() {
-  return process.env.STRIPE_CANCEL_URL || `${siteUrl()}/checkout`;
-}
 
 /** "7 × Life-size 5'8" × 4'3" — Premium Corrugated (corrugated plastic / Coroplast)" */
 function describeItem(item) {
@@ -75,8 +65,8 @@ function buildSessionParams(order) {
           "Damaged or misprinted? We'll reprint it free (see our returns policy).",
       },
     },
-    success_url: successUrl().replace("{ORDER_ID}", order.id),
-    cancel_url: cancelUrl(),
+    success_url: config.stripeSuccessUrl.replace("{ORDER_ID}", order.id),
+    cancel_url: config.stripeCancelUrl,
     metadata: { orderId: order.id },
   };
 }
@@ -90,7 +80,7 @@ function constructWebhookEvent(rawBody, signature) {
   return stripe.webhooks.constructEvent(
     rawBody,
     signature,
-    process.env.STRIPE_WEBHOOK_SECRET
+    config.stripeWebhookSecret
   );
 }
 

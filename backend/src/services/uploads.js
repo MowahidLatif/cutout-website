@@ -20,6 +20,7 @@
 const path = require("path");
 const sharp = require("sharp");
 const { randomUUID } = require("crypto");
+const config = require("../config");
 const storage = require("./storage");
 
 // Guards against decompression bombs: a small file that decodes to a huge image.
@@ -46,7 +47,7 @@ function unsupportedError(message) {
 }
 
 function maxUploadMb() {
-  return Number(process.env.UPLOAD_MAX_MB || 18);
+  return config.uploadMaxMb;
 }
 
 function maxUploadBytes() {

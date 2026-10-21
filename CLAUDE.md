@@ -16,13 +16,17 @@ who produces and ships the product directly to the customer.
   and small page-specific JS files. The Express backend serves `frontend/`
   on the same port as the API: run `npm run dev` in `backend/` and open
   http://localhost:4000 (clean URLs like `/pricing` work). No
-  `npm run build` for the frontend, and no CORS or API base URL.
+  `npm run build` for the frontend, and no CORS (the API base, `/api`, is
+  `SITE.apiBaseUrl` in `frontend/js/site-config.js`, with the other URLs).
   Storefront copy that isn't real yet (rating, quotes, turnaround, "from"
   price) is marked `PLACEHOLDER` in `index.html` or lives in
   `frontend/js/site-config.js`. Keep new unknowns there, never in prices.
 - **Backend: Express (Node.js), flat structure — routes → services → db.**
   No DTO/validator/repository ceremony. A route handler parses the request,
   calls a service function, returns JSON. Keep it boring and readable.
+  Read settings only through `backend/src/config.js` (never `process.env`
+  elsewhere). Secrets live only in `backend/.env`, never in `frontend/`,
+  which is all public.
 - **Database: PostgreSQL.**
 - **Payments: Stripe Checkout** (hosted page — no custom card form).
 - **Cloud: AWS** — S3 for uploaded images in production (local disk in dev

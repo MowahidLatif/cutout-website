@@ -6,7 +6,7 @@
  * once, then cached by the browser.
  *
  *   Library: Transformers.js (@huggingface/transformers), Apache-2.0,
- *            loaded from jsDelivr, pinned version.
+ *            loaded from jsDelivr, pinned version (SITE.backgroundRemoval).
  *   Model:   MODNet (Xenova/modnet), Apache-2.0, ~6.6 MB quantized, pinned
  *            revision. Strongest on people; pets/objects can come out rough,
  *            which is why customers can turn removal off per photo.
@@ -15,9 +15,8 @@
  * non-commercial models such as @imgly/background-removal, ISNet or RMBG.)
  */
 (function () {
-  const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js";
-  const MODEL = "Xenova/modnet";
-  const MODEL_REVISION = "fa2fa546052fba4c08921230a26cc69a333fca12";
+  // URLs and the pinned versions live in js/site-config.js.
+  const { libraryUrl, model, modelRevision } = window.SITE.backgroundRemoval;
 
   let pipelinePromise = null;
   let queue = Promise.resolve(); // one photo at a time, so phones don't run out of memory
@@ -26,13 +25,13 @@
   function loadPipeline(onStatus) {
     if (!pipelinePromise) {
       pipelinePromise = (async () => {
-        const transformers = await import(TRANSFORMERS_URL);
+        const transformers = await import(libraryUrl);
         transformers.env.allowLocalModels = false;
         // Single-threaded: works without cross-origin isolation and keeps
         // memory down on phones (MODNet is small, so it's still quick).
         transformers.env.backends.onnx.wasm.numThreads = 1;
-        return transformers.pipeline("background-removal", MODEL, {
-          revision: MODEL_REVISION,
+        return transformers.pipeline("background-removal", model, {
+          revision: modelRevision,
           device: "wasm",
           dtype: "uint8",
           progress_callback: (event) => {

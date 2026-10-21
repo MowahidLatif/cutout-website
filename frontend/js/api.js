@@ -2,13 +2,11 @@
  * Tiny fetch() wrapper for talking to the backend.
  * Loaded as a plain <script> tag — attaches to `window.Api`.
  *
- * The backend serves the site and the API from the same origin, so calls go
- * to "/api" and nothing needs configuring. (Only if the frontend is ever
- * hosted elsewhere: set `window.API_BASE_URL` before this script runs, and
- * FRONTEND_ORIGIN on the backend for CORS.)
+ * The base URL is SITE.apiBaseUrl (js/site-config.js): "/api", because the
+ * backend serves the site and the API from the same origin.
  */
 (function () {
-  const BASE_URL = window.API_BASE_URL || "/api";
+  const BASE_URL = window.SITE.apiBaseUrl;
 
   async function request(path, { method, body, headers }) {
     const isForm = body instanceof FormData;

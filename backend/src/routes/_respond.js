@@ -2,6 +2,8 @@
  * Shared response helpers so every route uses the same
  * { data, error } envelope. See docs/backend-guide.md.
  */
+const config = require("../config");
+
 const STATUS_BY_CODE = {
   VALIDATION_ERROR: 400,
   UNAUTHORIZED: 401,
@@ -30,7 +32,7 @@ function fail(res, err) {
     // Full details stay in the server log. In production the client never
     // sees internal messages (SQL errors, file paths, stack traces).
     console.error(err);
-    if (process.env.NODE_ENV === "production") message = "Something went wrong. Please try again.";
+    if (config.production) message = "Something went wrong. Please try again.";
   }
   res.status(status).json({ data: null, error: { message, code } });
 }

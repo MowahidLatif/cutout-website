@@ -20,12 +20,16 @@ backend/
 ├── storage/uploads/           — uploaded images when STORAGE_DRIVER=disk
 │                                (gitignored, never served statically)
 └── src/
+    ├── config.js              — every env setting (getters, defaults, dev
+    │                             fallbacks) + startupProblems(); the only
+    │                             file that reads process.env
     ├── app.js                 — createApp(): security headers, optional
     │                             CORS, body limit, rate limits, /api
     │                             routes, frontend/ (clean URLs), error
     │                             handler. No listening (tests use it)
-    ├── server.js              — production startup checks, then listens
-    │                             on HOST:PORT
+    ├── server.js              — loads .env, runs config.startupProblems()
+    │                             (refuse in production / warn in dev), then
+    │                             listens on HOST:PORT
     ├── security.js            — client IP (TRUST_PROXY / CLIENT_IP_HEADER),
     │                             rate limiters, helmet/CSP
     ├── routes/
@@ -448,7 +452,26 @@ Every link (order status, image, admin) is built from `SITE_URL`.
 `build*` functions return `{ to, subject, body }` without sending, so they
 can be tested.
 
-## Environment variables
+## Environment variables (`config.js`)
+
+`src/config.js` is the **only** file that reads `process.env`. Everything
+else does `const config = require("../config")` and uses `config.siteUrl`,
+`config.adminToken`, `config.production` and so on. To add a setting:
+add a getter there (with its default), a line in `.env.example`, and a row
+below.
+
+- **Getters, not a snapshot.** Each value is read when it's used, so tests
+  can change `process.env` between cases.
+- **The dev fallbacks** for `ADMIN_TOKEN` and `FILE_LINK_SECRET` live there.
+  They're public and weak on purpose: `config.startupProblems()` makes a
+  production server refuse to start with them.
+- **Secrets only ever come from the environment** (`backend/.env`, which is
+  gitignored). Never put one in source, and never in `frontend/`:
+  everything the browser loads is public.
+- **What stays out of `config.js`:**
+  - business rules (order limits, labels, pricing ranges) stay next to the
+    code that uses them; prices are in the database
+  - CSP hosts stay in `security.js`, as policy
 
 All are in `backend/.env.example` with working dev defaults, except
 `NODE_ENV`, which is unset in dev. Set it to `production` on the server.

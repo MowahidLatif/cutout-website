@@ -12,22 +12,21 @@ const ordersService = require("../services/orders");
 const storage = require("../services/storage");
 const { sendShippedNotification } = require("../services/email");
 const { MATERIAL_LABELS, TIER_LABELS, TEXT_STYLE_LABELS, formatFeetInches, plural } = require("../services/catalog");
+const config = require("../config");
 const { clientIp } = require("../security");
 const { ok, fail, appError } = require("./_respond");
-
-const DEV_ADMIN_TOKEN = "dev-admin-token";
 
 const router = express.Router();
 
 /** Hashing both sides first makes the comparison constant-time regardless of length. */
 function tokenMatches(given) {
-  const expected = process.env.ADMIN_TOKEN || DEV_ADMIN_TOKEN;
+  const expected = config.adminToken;
   const digest = (value) => crypto.createHash("sha256").update(value).digest();
   return crypto.timingSafeEqual(digest(given), digest(expected));
 }
 
 function requireAdmin(req, res, next) {
-  if (process.env.NODE_ENV === "production" && !req.secure) {
+  if (config.production && !req.secure) {
     return fail(res, appError("Admin requires HTTPS.", "FORBIDDEN"));
   }
   if ("token" in req.query || "admin_token" in req.query || "adminToken" in req.query) {
@@ -213,4 +212,3 @@ router.get(
 );
 
 module.exports = router;
-module.exports.DEV_ADMIN_TOKEN = DEV_ADMIN_TOKEN;

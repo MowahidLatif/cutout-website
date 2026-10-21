@@ -1,6 +1,10 @@
 /**
  * Every hard-coded storefront value in one place, until real supplier and
- * business data is in. Attaches to `window.SITE`.
+ * business data is in, plus the URLs the browser talks to. Attaches to
+ * `window.SITE`. Loaded by every page, before the other scripts.
+ *
+ * Nothing here is secret: everything the browser loads is public. Secrets
+ * (Stripe, AWS, admin token) live only in backend/.env.
  *
  * PLACEHOLDER: the delivery times, the "from" price and the rating below
  * are copied from the design mockups, not measured. Replace them (and the
@@ -91,5 +95,21 @@
     // backend/src/services/orders.js.
     maxOrderQuantity: 500, // cutouts in total
     maxUniqueImages: 10, // different photos
+
+    // ---------- Where the browser sends requests ----------
+    // The backend serves the site and the API on the same origin, so this is
+    // a relative path. Only if the frontend is ever hosted elsewhere: change
+    // it to the API's full URL and set FRONTEND_ORIGIN on the backend (CORS).
+    apiBaseUrl: "/api",
+
+    // In-browser background remover (js/background-removal.js). Library and
+    // model are pinned so they can't change under us; both Apache-2.0. The
+    // hosts must also be allowed by the CSP in backend/src/security.js
+    // (jsDelivr for the library, huggingface.co / *.hf.co for the model).
+    backgroundRemoval: {
+      libraryUrl: "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js",
+      model: "Xenova/modnet",
+      modelRevision: "fa2fa546052fba4c08921230a26cc69a333fca12",
+    },
   };
 })();
