@@ -70,6 +70,26 @@ test("transparency is read from the stored file and tells the supplier how to cu
   assert.match(body, /Background: removed — transparent PNG, cut along the outline[\s\S]*Background: kept \(print the whole photo\)/);
 });
 
+test("border colour and notes are validated, stored, and shown to the supplier", async () => {
+  const key = await uploadPhoto();
+  const item = (extra) => ({ material: "coroplast", heightIn: 68, quantity: 1, imageKey: key, ...extra });
+  for (const borderColor of ["#123456", "white", "#FFF", 42]) {
+    await assert.rejects(orders.createOrder(orderInput([item({ borderColor })])), /Border colour must be one of/);
+  }
+  await assert.rejects(orders.createOrder(orderInput([item({ notes: "x".repeat(151) })])), /at most 150 characters/);
+
+  const order = await orders.createOrder(
+    orderInput([item({ borderColor: "#000000", notes: "Please keep\nthe hat in the cut" }), item({ borderColor: null })])
+  );
+  assert.deepEqual(order.items.map((i) => [i.borderColor, i.notes]), [["#000000", "Please keep the hat in the cut"], [null, null]]);
+  const lowercase = await orders.createOrder(orderInput([item({ borderColor: "#f28c28", notes: "x".repeat(150) })]));
+  assert.equal(lowercase.items[0].borderColor, "#F28C28");
+
+  const { body } = email.buildFulfillmentEmail(order);
+  assert.match(body, /Border: Black \(#000000\)\n   Notes: Please keep the hat in the cut/);
+  assert.match(body, /Border: none/);
+});
+
 test("the shipped email includes carrier, tracking and the status link", async () => {
   const order = await makeOrder([{ material: "coroplast", heightIn: 68, quantity: 1 }]);
   const { body } = email.buildShippedNotification({

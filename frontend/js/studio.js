@@ -21,6 +21,10 @@
       material: SITE.materials.find((m) => !m.comingSoon).id,
       quantity: 1,
       removeBackground: true, // per photo; the customer can switch it off
+      borderColor: SITE.defaultBorderColor, // hex from SITE.borderColors, or null for no border
+      lastBorderColor: SITE.defaultBorderColor, // restored when the border is switched back on
+      notes: "", // for the supplier, up to SITE.maxNotesLength
+      notesOpen: false,
     };
   }
 
@@ -29,9 +33,10 @@
     // One design per photo:
     // { id, name, file, objectUrl, src, aspect, isSample, uploadPromise, imageKey,
     //   uploadError, ...settings,
-    //   original: { key, src }, cutout: { key, src } | null,   // the two printable versions
-    //   bgStatus: null | "processing" | "done" | "failed", bgProgress }
-    // `imageKey` / `src` always point at the version the customer chose.
+    //   original: { key, src, width, height }, cutout: { … } | null,   // the two printable versions
+    //   bgStatus: null | "processing" | "done" | "failed", bgProgress,
+    //   reviewed (seen in the review modal), edited (cutout traced by hand) }
+    // `imageKey` / `src` / pixel size always follow the version the customer chose.
     designs: [],
     activeId: null,
     // Settings edited before any photo is added; new photos start from these.
@@ -79,8 +84,6 @@
     bgRow: $("bg-row"),
     removeBg: $("remove-bg"),
     bgHint: $("bg-hint"),
-    stageBusy: $("stage-busy"),
-    stageBusyText: $("stage-busy-text"),
     qualityBadge: $("quality-badge"),
     qualityTip: $("quality-tip"),
     qualityConsent: $("quality-consent"),
@@ -94,6 +97,28 @@
     priceLines: $("price-lines"),
     qty: $("qty"),
     qtyLabel: $("qty-label"),
+    qtyHint: $("qty-hint"),
+    borderLabel: $("border-label"),
+    borderToggle: $("border-toggle"),
+    borderSwatches: $("border-swatches"),
+    notesOpen: $("notes-open"),
+    notesField: $("notes-field"),
+    notesLabel: $("notes-label"),
+    notesInput: $("notes-input"),
+    notesCount: $("notes-count"),
+    reviewModal: $("review-modal"),
+    reviewCount: $("review-count"),
+    reviewTitle: $("review-title"),
+    reviewError: $("review-error"),
+    reviewPanes: document.querySelectorAll("#review-modal [data-pane]"),
+    reviewProgress: $("review-progress"),
+    reviewImg: $("review-img"),
+    reviewFailedImg: $("review-failed-img"),
+    traceCanvas: $("trace-canvas"),
+    traceHint: $("trace-hint"),
+    traceUndo: $("trace-undo"),
+    traceReset: $("trace-reset"),
+    traceDone: $("trace-done"),
     discountTag: $("discount-tag"),
     deliveryTitle: $("delivery-title"),
     deliverySub: $("delivery-sub"),
@@ -213,14 +238,6 @@
     return SITE.maxUniqueImages - cartTotals().uniqueImages - realDesigns().length;
   }
 
-  function quantityOptions(selected, max) {
-    let html = "";
-    for (let n = 1; n <= max; n++) {
-      html += `<option value="${n}"${n === selected ? " selected" : ""}>${n}</option>`;
-    }
-    return html;
-  }
-
   // ---------- Adding photos ----------
   function openPicker() {
     els.input.click();
@@ -302,6 +319,8 @@
       cutout: null,
       bgStatus: null,
       bgProgress: null,
+      reviewed: false,
+      edited: false,
       ...base,
       ...fields,
     };
@@ -380,12 +399,21 @@
         design.aspect = result.width / result.height;
         design.src = result.previewUrl;
         design.note = result.note || null;
-        design.original = { key: result.imageKey, src: result.previewUrl };
-        if (design.removeBackground) startBackgroundRemoval(design);
+        design.original = { key: result.imageKey, src: result.previewUrl, width: result.width, height: result.height };
+        if (design.removeBackground) {
+          startBackgroundRemoval(design);
+          openNextReview();
+        } else {
+          design.reviewed = true;
+        }
         renderAll();
       },
       (err) => {
         design.uploadError = err.message;
+        if (review.design === design) {
+          closeReview();
+          openNextReview();
+        }
         renderAll();
       }
     );
@@ -396,6 +424,7 @@
     if (design.cutout) URL.revokeObjectURL(design.cutout.src);
     const index = state.designs.indexOf(design);
     state.designs.splice(index, 1);
+    if (review.design === design) closeReview();
     if (state.activeId === design.id) {
       const next = state.designs[index] || state.designs[index - 1];
       state.activeId = next ? next.id : null;
@@ -440,6 +469,10 @@
     if (version) {
       design.imageKey = version.key;
       design.src = version.src;
+      // A hand-traced crop has its own size and proportions.
+      design.widthPx = version.width;
+      design.heightPx = version.height;
+      design.aspect = version.width / version.height;
     }
   }
 
@@ -454,6 +487,7 @@
     if (d.bgStatus === "processing") return "Background: removing…";
     if (d.bgStatus === "failed") return "Background: kept (removal failed)";
     if (!d.removeBackground) return "Background: kept";
+    if (d.cutout && d.edited) return "✓ Custom cutout";
     return d.cutout ? "✓ Background removed" : "Background: kept";
   }
 
@@ -482,16 +516,15 @@
           design.bgProgress = status;
           renderTray();
           renderStage();
+          renderReview();
         },
       });
       if (!state.designs.includes(design)) return; // removed while processing
-      const formData = new FormData();
-      formData.append("image", new File([blob], "cutout.png", { type: "image/png" }));
-      const result = await Api.upload("/uploads", formData);
-      design.cutout = { key: result.imageKey, src: URL.createObjectURL(blob) };
+      await uploadCutout(design, blob);
       design.bgStatus = "done";
       applyBackgroundChoice(design);
       renderAll();
+      renderReview();
     } catch (err) {
       // Technical detail goes to the console; the customer gets a plain notice.
       console.warn("Background removal failed:", err);
@@ -499,17 +532,225 @@
     }
   }
 
+  /** Uploads a transparent PNG (automatic or hand-traced) as the design's cutout. */
+  async function uploadCutout(design, blob) {
+    const formData = new FormData();
+    formData.append("image", new File([blob], "cutout.png", { type: "image/png" }));
+    const result = await Api.upload("/uploads", formData);
+    if (design.cutout) URL.revokeObjectURL(design.cutout.src);
+    design.cutout = { key: result.imageKey, src: URL.createObjectURL(blob), width: result.width, height: result.height };
+  }
+
   function backgroundFailed(design, reason) {
     if (!state.designs.includes(design)) return;
     design.bgStatus = "failed";
     design.removeBackground = false;
     applyBackgroundChoice(design);
-    showTrayMessage(
-      `We couldn't remove the background from ${design.name}${reason ? ` (${reason})` : ""} — we'll print it as uploaded. ` +
-        "You can try again from its photo card."
-    );
+    // The review modal explains it; only a photo already reviewed gets a notice.
+    if (design.reviewed) {
+      showTrayMessage(
+        `We couldn't remove the background from ${design.name}${reason ? ` (${reason})` : ""} — we'll print it as uploaded. ` +
+          "Use “Review cutout” on its photo card to try again or trace it yourself."
+      );
+    }
     renderAll();
+    renderReview();
   }
+
+  // ---------- Review modal (after each upload: loading → review → optional trace) ----------
+  // One photo at a time. Closing it (X, Escape, backdrop) keeps the AI cutout,
+  // same as Accept; the next photo waiting for review opens after it.
+  const review = { design: null, tracing: false, saving: false, error: "", editor: null, traceSource: "cutout" };
+
+  /** Photos still to review, in tray order (one may still be uploading). */
+  function waitingForReview() {
+    return state.designs.filter((d) => !d.isSample && !d.uploadError && !d.reviewed && d.removeBackground);
+  }
+
+  function openNextReview() {
+    if (els.reviewModal.open) return renderReview();
+    const next = waitingForReview()[0];
+    if (next) openReview(next);
+  }
+
+  function openReview(design) {
+    review.design = design;
+    review.tracing = false;
+    review.error = "";
+    if (!els.reviewModal.open) els.reviewModal.showModal();
+    renderReview();
+  }
+
+  /** Closes without changing the photo (it was removed, or a choice was already made). */
+  function closeReview() {
+    review.design = null;
+    review.tracing = false;
+    if (els.reviewModal.open) els.reviewModal.close();
+  }
+
+  /** "cutout": Accept · "original": keep the background · "keep": closed (removal stays on). */
+  function finishReview(choice) {
+    const d = review.design;
+    if (!d) return;
+    if (choice === "original") d.removeBackground = false;
+    if (choice === "cutout") d.removeBackground = true;
+    d.reviewed = true;
+    applyBackgroundChoice(d);
+    state.activeId = d.id;
+    closeReview();
+    hideTrayMessage();
+    renderTextList();
+    renderMaterials();
+    renderAll();
+    openNextReview();
+  }
+
+  function reviewPane(d) {
+    if (review.tracing) return "trace";
+    if (review.saving || d.bgStatus === "processing" || (!d.cutout && d.bgStatus !== "failed")) return "loading";
+    return d.bgStatus === "failed" && !d.cutout ? "failed" : "review";
+  }
+
+  function renderReview() {
+    const d = review.design;
+    if (!d || !els.reviewModal.open) return;
+    const pane = reviewPane(d);
+    els.reviewPanes.forEach((p) => (p.hidden = p.dataset.pane !== pane));
+    const real = realDesigns();
+    els.reviewCount.textContent = real.length > 1 ? `Photo ${real.indexOf(d) + 1} of ${real.length}` : "Your photo";
+    els.reviewTitle.textContent = {
+      loading: review.saving ? "Saving your cutout…" : "Removing the background…",
+      review: d.edited ? "Here's your traced cutout" : "How does this look?",
+      failed: "Background removal didn't work",
+      trace: "Trace your cutout",
+    }[pane];
+    els.reviewError.hidden = !review.error;
+    els.reviewError.textContent = review.error;
+    if (pane === "loading") {
+      els.reviewProgress.textContent = review.saving
+        ? "Uploading the edited cutout…"
+        : d.original
+          ? backgroundProgressText(d)
+          : "Uploading your photo…";
+    }
+    if (pane === "review" && els.reviewImg.getAttribute("src") !== d.cutout.src) els.reviewImg.src = d.cutout.src;
+    if (pane === "failed" && els.reviewFailedImg.getAttribute("src") !== d.original.src) els.reviewFailedImg.src = d.original.src;
+  }
+
+  // Trace mode (js/trace-editor.js)
+  function traceEditor() {
+    if (!review.editor) {
+      review.editor = TraceEditor.create(els.traceCanvas, {
+        onChange: () => {
+          const edited = review.editor.edited();
+          els.traceUndo.disabled = !review.editor.canUndo();
+          els.traceReset.disabled = !edited;
+          els.traceDone.disabled = !edited;
+        },
+      });
+    }
+    return review.editor;
+  }
+
+  async function startTrace(source) {
+    const d = review.design;
+    review.tracing = true;
+    review.error = "";
+    review.traceSource = source === "cutout" && d.cutout ? "cutout" : "original";
+    document.querySelectorAll("[data-trace-source]").forEach((btn) => {
+      btn.setAttribute("aria-pressed", String(btn.dataset.traceSource === review.traceSource));
+      btn.disabled = btn.dataset.traceSource === "cutout" && !d.cutout;
+    });
+    renderReview(); // the canvas needs to be visible to measure itself
+    const version = review.traceSource === "cutout" ? d.cutout : d.original;
+    try {
+      await traceEditor().load(version.src);
+    } catch (err) {
+      review.error = err.message;
+      renderReview();
+    }
+  }
+
+  async function finishTrace() {
+    const d = review.design;
+    let blob;
+    try {
+      blob = await traceEditor().toBlob();
+    } catch (err) {
+      review.error = err.message;
+      return renderReview();
+    }
+    review.tracing = false;
+    review.saving = true;
+    renderReview();
+    try {
+      await uploadCutout(d, blob);
+      d.edited = true;
+      d.bgStatus = "done";
+      d.removeBackground = true;
+      applyBackgroundChoice(d);
+    } catch (err) {
+      console.warn("Saving the traced cutout failed:", err);
+      review.error = `Your traced cutout couldn't be saved (${err.message}). Please try again.`;
+    }
+    review.saving = false;
+    renderAll();
+    renderReview();
+  }
+
+  $("review-accept").addEventListener("click", () => finishReview("cutout"));
+  $("review-keep-original").addEventListener("click", () => finishReview("original"));
+  $("review-use-original").addEventListener("click", () => finishReview("original"));
+  $("review-close").addEventListener("click", () => finishReview("keep"));
+  $("review-edit").addEventListener("click", () => startTrace("cutout"));
+  $("review-trace-original").addEventListener("click", () => startTrace("original"));
+  $("review-retry").addEventListener("click", () => {
+    const d = review.design;
+    d.removeBackground = true;
+    review.error = "";
+    startBackgroundRemoval(d);
+    renderReview();
+  });
+  // Escape: closing keeps the cutout, like the X. While tracing, Escape only leaves trace mode.
+  els.reviewModal.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    if (review.tracing) {
+      review.tracing = false;
+      renderReview();
+    } else {
+      finishReview("keep");
+    }
+  });
+  // A click on the backdrop (outside the dialog box) closes it — but never mid-trace.
+  els.reviewModal.addEventListener("click", (e) => {
+    if (e.target !== els.reviewModal || review.tracing) return;
+    const box = els.reviewModal.getBoundingClientRect();
+    const inside = e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
+    if (!inside) finishReview("keep");
+  });
+  document.querySelectorAll("[data-trace-tool]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      traceEditor().setTool(btn.dataset.traceTool);
+      document
+        .querySelectorAll("[data-trace-tool]")
+        .forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+      els.traceHint.textContent =
+        btn.dataset.traceTool === "crop"
+          ? "Drag a box around what you want to keep — the photo is cut down to it."
+          : "Drag around what you want to keep — everything outside becomes transparent.";
+    })
+  );
+  document.querySelectorAll("[data-trace-source]").forEach((btn) =>
+    btn.addEventListener("click", () => startTrace(btn.dataset.traceSource))
+  );
+  els.traceUndo.addEventListener("click", () => traceEditor().undo());
+  els.traceReset.addEventListener("click", () => traceEditor().reset());
+  els.traceDone.addEventListener("click", finishTrace);
+  $("trace-cancel").addEventListener("click", () => {
+    review.tracing = false;
+    renderReview();
+  });
+  window.addEventListener("resize", () => review.tracing && review.editor && review.editor.layout());
 
   // ---------- Tray ----------
   function designStatus(d) {
@@ -526,6 +767,13 @@
     return "✓ Uploaded";
   }
 
+  function renderTraySummary() {
+    const real = realDesigns();
+    els.traySummary.textContent = real.length
+      ? `${plural(real.length, "photo")} · ${plural(trayQuantity(), "cutout")}`
+      : "Sample photo";
+  }
+
   function renderTray() {
     const show = state.designs.length > 0;
     els.tray.hidden = !show;
@@ -534,11 +782,7 @@
       return;
     }
 
-    const real = realDesigns();
-    const qty = trayQuantity();
-    els.traySummary.textContent = real.length
-      ? `${plural(real.length, "photo")} · ${plural(qty, "cutout")}`
-      : "Sample photo";
+    renderTraySummary();
 
     const cards = state.designs
       .map((d) => {
@@ -553,22 +797,22 @@
                   ? `<img class="tray-card__thumb" src="${escapeHtml(d.src)}" alt="" />`
                   : '<span class="tray-card__thumb tray-card__thumb--processing">Processing…</span>'
               }
-              ${d.bgStatus === "processing" ? '<span class="spinner-overlay" aria-hidden="true"><span class="spinner"></span></span>' : ""}
             </span>
             <span class="tray-card__name">${escapeHtml(d.name)}</span>
             <span class="tray-card__status">${escapeHtml(status)}</span>
             ${d.isSample || !d.imageKey ? "" : `<span class="tray-card__bg">${escapeHtml(backgroundLabel(d))}</span>`}
           </button>
           ${
-            d.bgStatus === "failed"
-              ? `<button type="button" class="link-accent tray-card__retry" data-retry-bg>Try removing the background again</button>`
+            !d.isSample && d.original && (d.bgStatus === "done" || d.bgStatus === "failed")
+              ? `<button type="button" class="link-accent tray-card__review" data-review>Review cutout</button>`
               : ""
           }
           ${
             d.isSample
               ? ""
               : `<label class="tray-card__qty">Qty
-                  <select data-qty aria-label="Quantity for ${escapeHtml(d.name)}">${quantityOptions(d.quantity, maxQuantityFor(d))}</select>
+                  <input type="number" inputmode="numeric" min="1" max="${maxQuantityFor(d)}" step="1" value="${d.quantity}"
+                    data-qty aria-label="Quantity for ${escapeHtml(d.name)}" />
                 </label>`
           }
           <button type="button" class="icon-btn tray-card__remove" data-remove aria-label="Remove ${escapeHtml(d.name)}">
@@ -598,10 +842,8 @@
     if (!card) return;
     const design = state.designs.find((d) => d.id === card.dataset.id);
     if (!design) return;
-    if (e.target.closest("[data-retry-bg]")) {
-      design.removeBackground = true;
-      startBackgroundRemoval(design);
-      renderAll();
+    if (e.target.closest("[data-review]")) {
+      openReview(design);
       return;
     }
     if (e.target.closest("[data-remove]")) {
@@ -610,16 +852,31 @@
       renderAll();
     } else if (e.target.closest(".tray-card__select")) {
       state.activeId = design.id;
+      els.qtyHint.textContent = "";
       renderTextList();
       renderMaterials();
       renderAll();
     }
   });
 
+  // Tray quantity boxes: typing updates the price without rebuilding the tray
+  // (which would drop focus); leaving the box clamps it and refreshes everything.
+  const trayDesignOf = (input) => state.designs.find((d) => d.id === input.closest(".tray-card").dataset.id);
+  els.trayList.addEventListener("input", (e) => {
+    if (!e.target.matches("[data-qty]")) return;
+    const design = trayDesignOf(e.target);
+    if (!design) return;
+    readQuantity(e.target, design, false);
+    renderTraySummary();
+    render();
+  });
   els.trayList.addEventListener("change", (e) => {
     if (!e.target.matches("[data-qty]")) return;
-    const design = state.designs.find((d) => d.id === e.target.closest(".tray-card").dataset.id);
-    if (design) setQuantity(design, Number(e.target.value));
+    const design = trayDesignOf(e.target);
+    if (!design) return;
+    const hint = readQuantity(e.target, design, true);
+    if (hint) showTrayMessage(`${design.name}: ${hint}`);
+    renderAll();
   });
 
   // ---------- Size controls (edit the active design) ----------
@@ -728,13 +985,103 @@
     }
   });
 
-  // ---------- Quantity (dropdowns) ----------
-  function setQuantity(design, n) {
-    design.quantity = clamp(Math.round(n) || 1, 1, maxQuantityFor(design));
-    renderAll();
+  // ---------- Quantity (number boxes: price card, tray cards) ----------
+  /**
+   * Applies a typed quantity to `design`, kept within 1 … maxQuantityFor().
+   * While typing (`commit` false) an empty box is left alone; on commit the
+   * box is rewritten with the value actually used. Returns a hint explaining
+   * any adjustment ("" if none).
+   */
+  function readQuantity(input, design, commit) {
+    const max = maxQuantityFor(design);
+    const raw = input.value.trim() === "" ? NaN : Number(input.value);
+    let hint = "";
+    if (Number.isFinite(raw)) {
+      design.quantity = clamp(Math.round(raw), 1, max);
+      if (raw > max) {
+        hint =
+          max < SITE.maxOrderQuantity
+            ? `Max ${max} — an order can have ${SITE.maxOrderQuantity} cutouts in total, counting your other photos and cart.`
+            : `Max ${max} cutouts per order.`;
+      } else if (raw < 1) {
+        hint = "At least 1.";
+      } else if (!Number.isInteger(raw)) {
+        hint = "Whole numbers only.";
+      }
+    }
+    if (commit) input.value = design.quantity;
+    return hint;
   }
 
-  els.qty.addEventListener("change", () => setQuantity(active(), Number(els.qty.value)));
+  els.qty.addEventListener("input", () => {
+    els.qtyHint.textContent = readQuantity(els.qty, active(), false);
+    renderAll();
+  });
+  els.qty.addEventListener("change", () => {
+    els.qtyHint.textContent = readQuantity(els.qty, active(), true);
+    renderAll();
+  });
+
+  // ---------- Border and notes (price card, active design) ----------
+  els.borderSwatches.innerHTML = SITE.borderColors
+    .map(
+      (c) => `<label class="swatch">
+        <input type="radio" name="border-color" value="${c.hex}" />
+        <span class="swatch__dot" style="--swatch:${c.hex}"></span>${escapeHtml(c.name)}
+      </label>`
+    )
+    .join("");
+
+  els.borderToggle.addEventListener("change", () => {
+    const d = active();
+    if (els.borderToggle.checked) {
+      d.borderColor = d.lastBorderColor || SITE.defaultBorderColor;
+    } else {
+      if (d.borderColor) d.lastBorderColor = d.borderColor;
+      d.borderColor = null;
+    }
+    render();
+  });
+
+  els.borderSwatches.addEventListener("change", (e) => {
+    if (e.target.name !== "border-color") return;
+    active().borderColor = active().lastBorderColor = e.target.value;
+    render();
+  });
+
+  els.notesOpen.addEventListener("click", () => {
+    active().notesOpen = true;
+    render();
+    els.notesInput.focus();
+  });
+
+  els.notesInput.addEventListener("input", () => {
+    const d = active();
+    d.notes = els.notesInput.value.slice(0, SITE.maxNotesLength);
+    els.notesCount.textContent = `${d.notes.length}/${SITE.maxNotesLength}`;
+  });
+
+  function renderOrderOptions(d) {
+    const disabled = Boolean(d.isSample);
+    const which = state.designs.length > 1 ? ` · ${d.name}` : "";
+    els.borderLabel.textContent = `Border around the cutout${which}`;
+    els.borderToggle.checked = Boolean(d.borderColor);
+    els.borderToggle.disabled = disabled;
+    els.borderSwatches.hidden = !d.borderColor;
+    els.borderSwatches.querySelectorAll("input").forEach((input) => {
+      input.checked = input.value === d.borderColor;
+      input.disabled = disabled;
+    });
+    const open = d.notesOpen || Boolean(d.notes);
+    els.notesOpen.hidden = open;
+    els.notesOpen.disabled = disabled;
+    els.notesField.hidden = !open;
+    els.notesLabel.textContent = `Notes for the supplier${which}`;
+    els.notesInput.disabled = disabled;
+    els.notesInput.maxLength = SITE.maxNotesLength;
+    if (document.activeElement !== els.notesInput) els.notesInput.value = d.notes;
+    els.notesCount.textContent = `${d.notes.length}/${SITE.maxNotesLength}`;
+  }
 
   // ---------- Preview tools ----------
   document.querySelectorAll("[data-reference]").forEach((btn) =>
@@ -797,9 +1144,9 @@
     const hasPhoto = Boolean(d.src);
     els.figure.hidden = !hasPhoto;
     els.figure.classList.toggle("is-cutout", Boolean(d.cutout && d.removeBackground));
-    const busy = d.bgStatus === "processing";
-    els.stageBusy.hidden = !busy;
-    if (busy) els.stageBusyText.textContent = backgroundProgressText(d);
+    // The border preview: a die-cut outline on cutouts, a frame on whole photos.
+    els.figure.classList.toggle("no-border", !d.borderColor);
+    els.figure.style.setProperty("--edge", d.borderColor || "transparent");
     // A PDF/HEIC still being processed has no picture yet, but isn't "empty".
     els.stageDropzone.hidden = hasPhoto || state.designs.includes(d);
     els.sampleTag.hidden = !d.isSample;
@@ -876,13 +1223,8 @@
     // Quantity dropdown for the design being edited.
     const d = active();
     els.qtyLabel.textContent = state.designs.length > 1 ? `Quantity · ${d.name}` : "Quantity";
-    // Up to 500 options: only rebuild when the value or the ceiling changes
-    // (render() runs on every slider movement).
-    const qtyKey = `${d.quantity}/${maxQuantityFor(d)}`;
-    if (els.qty.dataset.key !== qtyKey) {
-      els.qty.innerHTML = quantityOptions(d.quantity, maxQuantityFor(d));
-      els.qty.dataset.key = qtyKey;
-    }
+    els.qty.max = maxQuantityFor(d);
+    if (document.activeElement !== els.qty) els.qty.value = d.quantity;
     els.qty.disabled = Boolean(d.isSample);
     const own = priceDesign(d).price;
     if (own && own.discountPct > 0) {
@@ -966,6 +1308,8 @@
         widthPx: d.widthPx,
         heightPx: d.heightPx,
         acceptedLowQuality: d.acceptedLowQuality,
+        borderColor: d.borderColor,
+        notes: d.notes.trim() || null,
       }))
     );
     Cart.addMany(items);
@@ -1007,7 +1351,10 @@
   els.removeBg.addEventListener("change", () => {
     const d = active();
     d.removeBackground = els.removeBg.checked;
-    if (d.removeBackground && !d.cutout) startBackgroundRemoval(d);
+    if (d.removeBackground && !d.cutout) {
+      startBackgroundRemoval(d);
+      openReview(d);
+    }
     applyBackgroundChoice(d);
     hideTrayMessage();
     renderAll();
@@ -1063,6 +1410,7 @@
 
     renderQuality(d);
     renderBackgroundToggle(d);
+    renderOrderOptions(d);
 
     renderStage();
     renderPrice();

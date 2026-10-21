@@ -49,6 +49,8 @@ frontend/
     ├── layout.js         — mobile nav toggle, footer year, cart badge
     ├── background-removal.js — window.BackgroundRemoval: in-browser background
     │                       removal (Transformers.js + MODNet, lazy-loaded)
+    ├── trace-editor.js   — window.TraceEditor: the review modal's manual
+    │                       lasso / crop-box editor (canvas, pointer events)
     ├── studio.js         — the studio on index.html
     ├── checkout.js       — checkout.html
     ├── order-status.js   — order-status.html
@@ -213,7 +215,7 @@ limits) and `makeThumbnail(src)`.
        `POST /api/uploads` straight away. Files over 18 MB (`SITE.maxUploadMb`) are rejected in
        the browser first.
      - **Photo tray:** one card per photo, with a thumbnail, its upload
-       status (or the server's rejection reason), a **quantity dropdown**,
+       status (or the server's rejection reason), a **quantity box**,
        and remove. Click a card to edit that photo; the size, text and
        material controls and the preview all follow the selected photo.
      - An "Add photos" tile shows how many more are allowed.
@@ -231,26 +233,41 @@ limits) and `makeThumbnail(src)`.
        Hugging Face. Both are Apache-2.0. They're downloaded on first use,
        then cached by the browser. The photo itself isn't sent anywhere
        extra.
-     - **Queue:** photos are processed one at a time. While they run:
-       - each one has a spinner on its tray card and on the preview
-       - the first time, the status reads "Downloading the background
-         remover (first time only)… N%"
-       - Add to cart waits ("Removing the background from N photos…")
-     - **Success:** the cutout PNG is uploaded as a second file. Each
-       design keeps both versions, in `design.original` and
-       `design.cutout` (`{ key, src }`).
-       - The preview shows the cutout without the white frame (an outline
-         and a shadow), and the tray thumbnail sits on a checkerboard.
-       - `applyBackgroundChoice` points `imageKey` / `src` at the chosen
-         version, so the **"Remove background" toggle** (size card, per
-         photo) switches instantly with no reprocessing.
-     - **Failure** (model download blocked, out of memory…):
-       - the spinner hides, the photo falls back to the original and the
-         toggle turns off
-       - `#tray-message` says "We couldn't remove the background from
-         Photo N — we'll print it as uploaded…" (the detail goes to the
-         console)
-       - the tray card offers **Retry**
+     - **Queue:** photos are processed one at a time, and Add to cart waits
+       ("Removing the background from N photos…").
+     - **Review modal** (`<dialog id="review-modal">`, one photo at a
+       time, in tray order, "Photo 2 of 3"):
+       - **Loading:** a spinner while the photo uploads and its background
+         is removed. The first time it shows "Downloading the background
+         remover (first time only)… N%".
+       - **Review:** the cutout on a checkerboard with **Accept** and
+         **Edit / Trace**, plus "Keep the original background instead".
+       - **Failed** (model download blocked, out of memory…): the original,
+         with **Use the original**, **Trace it myself** and "Try the
+         automatic removal again".
+       - **Trace** (`js/trace-editor.js`): **Lasso** (drag around what to
+         keep; outside becomes transparent) or **Crop box** (cuts the image
+         down), on the AI cutout or the original photo. Shapes stack, with
+         Undo, Reset and Cancel. **Done** uploads the result as the cutout
+         (`uploadCutout`) and goes back to Review ("✓ Custom cutout"). The
+         canvas is capped at 16 MP, the iOS limit, so huge PDF renders
+         are scaled down.
+       - **Closing** (X, Escape, backdrop) is the same as Accept: removal
+         stays on, even if it's still running. Escape while tracing only
+         leaves trace mode. The next photo waiting opens afterwards.
+       - Each design gets `reviewed` once it's been through the modal. A
+         **"Review cutout"** link on the tray card reopens it. A failure
+         after the photo was reviewed shows a `#tray-message` notice
+         instead.
+     - **Two versions per design:** `design.original` and `design.cutout`
+       (`{ key, src, width, height }`).
+       - `applyBackgroundChoice` points `imageKey` / `src` / pixel size /
+         aspect at the chosen version (a crop has its own proportions).
+         The **"Remove background" toggle** (size card) switches
+         instantly.
+       - The preview shows a cutout without the photo frame (an outline in
+         the border colour, plus a shadow). The tray thumbnail sits on a
+         checkerboard.
      - The sample photo is never processed.
      - MODNet is tuned for people; pets and objects can come out rough,
        which is what the toggle is for.
@@ -265,9 +282,13 @@ limits) and `makeThumbnail(src)`.
      and `SITE.maxOrderQuantity` (500) cutouts per order, counting what's
      already in the cart (`Cart.totals()`).
      - Extra photos are skipped with a message.
-     - Each quantity dropdown offers 1 … whatever is left of the 500. With
-       up to 500 options, the price-card copy is only rebuilt when its value
-       or ceiling changes.
+     - **Quantity boxes** (`<input type="number">`, price card and tray
+       cards) accept 1 … whatever is left of the 500 (`maxQuantityFor`).
+       - `readQuantity` applies valid numbers while typing, so the price
+         updates live. On leaving the box it's clamped, with a hint such
+         as "Max 480 — an order can have 500 cutouts in total…".
+       - Typing in a tray box doesn't rebuild the tray (that would drop
+         focus); the price-card box is never rebuilt.
    - **To-scale preview:**
      - a 9 ft wall with a 1–8 ft ruler; `--ppi` (pixels per inch) is set
        from the stage height and recomputed on resize
@@ -286,8 +307,16 @@ limits) and `makeThumbnail(src)`.
        cutouts", the total, and one line per design (tier × quantity, its
        own bulk discount). With a single photo it shows base × quantity and
        the discount, as before.
-     - a quantity dropdown for the selected photo (kept in sync with its
-       tray card)
+     - a quantity box for the selected photo (kept in sync with its tray
+       card)
+     - **Border** (per photo): a switch, on by default in White, and named
+       swatches from `SITE.borderColors` (White, Black, Blue, Green,
+       Orange, Red, Yellow). The design stores the hex code (`borderColor`,
+       or `null` for none), which also drives the preview's outline
+       (`--edge`). It's free; the price doesn't change.
+     - **Notes for the supplier** (per photo): "Add notes for the supplier"
+       reveals a textarea capped at `SITE.maxNotesLength` (150), with a
+       live counter.
      - the delivery estimate (today + `SITE` business days) and order-level
        shipping to `SITE.defaultCountry`
      - **"Add 3 designs to cart"** adds each design as its own cart item
@@ -299,9 +328,11 @@ limits) and `makeThumbnail(src)`.
 4. **Wall of fame:** 4 staggered cards and a "Make yours" button (→ `#studio`).
 
 ### `checkout.html`: Cart & checkout (`js/checkout.js`)
-- **Cart items:** thumbnail, tier and material, height × width, texts, a
-  **quantity dropdown** (1 … 500 minus the other items), the line price,
-  and Remove. If the cart breaks a limit (e.g. an old cart), checkout says
+- **Cart items:** thumbnail, tier and material, height × width, texts,
+  border and notes, a **quantity box** (1 … 500 minus the other items;
+  typing updates the line price and summary live, and leaving the box
+  clamps it), the line price, and Remove. `borderColor` and `notes` are
+  sent with each order item. If the cart breaks a limit (e.g. an old cart), checkout says
   so and disables Pay.
 - **Contact + shipping address:** a required **Full name** (for the
   shipping label), email, phone and address, with the same `maxlength`s as

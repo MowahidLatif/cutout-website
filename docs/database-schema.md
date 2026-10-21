@@ -18,6 +18,7 @@ order by `npm run migrate`:
 | `007_print_quality.sql` | `order_items` image pixel size, `print_ppi`, `low_quality_accepted` |
 | `008_admin_and_names.sql` | `orders.customer_name`, shipping/tracking columns, `order_items.print_score`, `order_notes` table, list indexes |
 | `009_transparency.sql` | `order_items.has_transparency` |
+| `010_border_color.sql` | `order_items.border_color` |
 
 `migrate.js` re-runs **every** file on each run, so every migration must
 be idempotent (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`, guarded `DO`
@@ -68,7 +69,8 @@ blocks).
 | quantity | integer | `> 0` |
 | unit_price | numeric(10,2) | after the quantity discount; snapshot at order time (config may change later) |
 | line_total | numeric(10,2) | `unit_price * quantity`; product only, no shipping |
-| notes | text | nullable, free-form |
+| border_color | text | nullable. The border's hex code from the storefront palette (`BORDER_COLORS` in `services/catalog.js`, e.g. `#000000`); null means no border. CHECK `^#[0-9A-F]{6}$`. Added in `010` |
+| notes | text | nullable; the customer's instructions for the supplier, up to 150 characters (enforced by the API) |
 
 ## `pricing_config`
 

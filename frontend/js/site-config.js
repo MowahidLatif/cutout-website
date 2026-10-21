@@ -96,6 +96,21 @@
     maxOrderQuantity: 500, // cutouts in total
     maxUniqueImages: 10, // different photos
 
+    // Border printed around each cutout (per photo). Stored on the order as
+    // the hex code. Same list as BORDER_COLORS in backend/src/services/catalog.js.
+    // Free for now: choosing a border doesn't change the price.
+    borderColors: [
+      { name: "White", hex: "#FFFFFF" },
+      { name: "Black", hex: "#000000" },
+      { name: "Blue", hex: "#1E5AA8" },
+      { name: "Green", hex: "#2E8B57" },
+      { name: "Orange", hex: "#F28C28" },
+      { name: "Red", hex: "#D62828" },
+      { name: "Yellow", hex: "#F7C948" },
+    ],
+    defaultBorderColor: "#FFFFFF",
+    maxNotesLength: 150, // per photo; same as the server's limit
+
     // ---------- Where the browser sends requests ----------
     // The backend serves the site and the API on the same origin, so this is
     // a relative path. Only if the frontend is ever hosted elsewhere: change

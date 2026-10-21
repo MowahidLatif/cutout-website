@@ -4,7 +4,8 @@
  *
  * Each item is a designed standee:
  *   { id, imageKey, thumbnail (small JPEG data URL), heightIn, widthIn,
- *     material, quantity, textElements: [{ style, text }] }
+ *     material, quantity, textElements: [{ style, text }],
+ *     borderColor (hex from SITE.borderColors, or null), notes (≤ 150 chars, or null) }
  *
  * Prices are never stored here — checkout recomputes them from the live
  * pricing config, and the backend recomputes them again.

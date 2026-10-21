@@ -73,7 +73,8 @@ backend/
             ├── 006_cad_and_final_sale.sql — currency, final-sale acceptance, USD→CAD seeds
             ├── 007_print_quality.sql — image pixel size, print_ppi, low_quality_accepted
             ├── 008_admin_and_names.sql — customer name, tracking, print_score, order_notes
-            └── 009_transparency.sql — order_items.has_transparency
+            ├── 009_transparency.sql — order_items.has_transparency
+            └── 010_border_color.sql — order_items.border_color
 ```
 
 `migrate.js` re-runs **every** file each time, so migrations must be
@@ -308,6 +309,10 @@ confirmation email includes it.
   - The fulfillment email, admin detail and supplier bundle say
     "Background: removed — transparent PNG, cut along the outline" or
     "Background: kept (print the whole photo)".
+- **Border and notes per item.** `createOrder` accepts `borderColor` only
+  from `BORDER_COLORS` (stored uppercase, null = none) and `notes` up to
+  150 characters (whitespace folded to one line). The supplier email,
+  admin detail and bundle add "Border: …" and "Notes: …" lines.
 - Known gap: uploads that never become orders aren't cleaned up. (With
   background removal on, every photo leaves an unused original or cutout.)
 
@@ -399,8 +404,10 @@ confirmation email includes it.
 Emails and the Stripe payment page use customer-facing names, not stored
 values, from `catalog.js`: `MATERIAL_LABELS` (e.g. `coroplast` → "Premium
 Corrugated (corrugated plastic / Coroplast)"), `TIER_LABELS`,
-`TEXT_STYLE_LABELS` and `QUALITY_LABELS`. They must match the storefront's
-`SITE.materials` and friends; `test/material-integrity.test.js` fails if
+`TEXT_STYLE_LABELS`, `QUALITY_LABELS` and `BORDER_COLORS` (hex → name;
+`borderLabel()` gives "Border: Black (#000000)" or "Border: none"). They
+must match the storefront's `SITE.materials`, `SITE.borderColors` and
+friends; `test/material-integrity.test.js` fails if
 they drift. The Stripe parameters are built by the pure
 `buildSessionParams(order)` (`services/stripe.js`).
 

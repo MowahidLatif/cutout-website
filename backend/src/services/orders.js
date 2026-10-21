@@ -8,6 +8,7 @@ const {
   CURRENCY,
 } = require("./pricing");
 const storage = require("./storage");
+const { BORDER_COLORS } = require("./catalog");
 
 const VALID_MATERIALS = ["cardboard", "coroplast", "foam_board", "acrylic"];
 const VALID_COUNTRIES = ["CA", "US"];
@@ -25,7 +26,7 @@ const FIELD_LIMITS = {
   city: 200,
   region: 200,
   postalCode: 20,
-  notes: 2000,
+  notes: 150, // per item, instructions for the supplier
 };
 const MAX_NOTE_LENGTH = 2000;
 const MAX_TRACKING_LENGTH = 100;
@@ -123,6 +124,9 @@ function validateOrderInput({ customerName, customerEmail, customerPhone, shippi
     }
     validateTextElements(item.textElements);
     checkLength(item.notes, FIELD_LIMITS.notes, "Item notes");
+    if (item.borderColor !== undefined && item.borderColor !== null && !normalizeBorderColor(item.borderColor)) {
+      throw validationError(`Border colour must be one of: ${Object.values(BORDER_COLORS).join(", ")}.`);
+    }
     if (!storage.isValidKey(item.imageKey)) {
       throw validationError("Each item needs an imageKey from POST /api/uploads.");
     }
@@ -140,6 +144,13 @@ function validateOrderInput({ customerName, customerEmail, customerPhone, shippi
       `An order can have at most ${MAX_UNIQUE_IMAGES} different photos (this one has ${uniqueImages}).`
     );
   }
+}
+
+/** "#ffffff" → "#FFFFFF" if it's in the palette; otherwise null. */
+function normalizeBorderColor(value) {
+  if (typeof value !== "string") return null;
+  const hex = value.trim().toUpperCase();
+  return BORDER_COLORS[hex] ? hex : null;
 }
 
 function validateTextElements(textElements) {
@@ -214,6 +225,9 @@ async function createOrder(input) {
       widthIn: item.widthIn === undefined || item.widthIn === null ? null : Number(item.widthIn),
       sizeTier,
       textElements,
+      // One line for the supplier's email and bundle.
+      notes: typeof item.notes === "string" && item.notes.trim() ? item.notes.replace(/\s+/g, " ").trim() : null,
+      borderColor: normalizeBorderColor(item.borderColor),
       image: imageSizes[index],
       price,
     });
@@ -263,8 +277,9 @@ async function createOrder(input) {
         `INSERT INTO order_items
            (order_id, image_key, size_tier, material, height_in, width_in, text_elements,
             quantity, unit_price, line_total, notes,
-            image_width_px, image_height_px, print_ppi, low_quality_accepted, print_score, has_transparency)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+            image_width_px, image_height_px, print_ppi, low_quality_accepted, print_score, has_transparency,
+            border_color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
         [
           order.id,
           item.imageKey,
@@ -276,13 +291,14 @@ async function createOrder(input) {
           item.quantity,
           item.price.unitPrice,
           item.price.total,
-          item.notes || null,
+          item.notes,
           item.image.width,
           item.image.height,
           item.image.ppi,
           item.image.lowAccepted,
           item.image.score,
           item.image.transparent,
+          item.borderColor,
         ]
       );
     }
@@ -359,6 +375,8 @@ async function getOrderById(orderId, { email } = {}) {
       printPpi: i.print_ppi,
       printScore: i.print_score,
       hasTransparency: Boolean(i.has_transparency),
+      borderColor: i.border_color || null,
+      notes: i.notes || null,
       lowQualityAccepted: Boolean(i.low_quality_accepted),
       quantity: i.quantity,
       unitPrice: Number(i.unit_price),

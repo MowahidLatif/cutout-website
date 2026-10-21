@@ -12,6 +12,7 @@ const {
   TIER_LABELS,
   TEXT_STYLE_LABELS,
   QUALITY_LABELS,
+  borderLabel,
   formatFeetInches,
   plural,
 } = require("./catalog");
@@ -74,8 +75,10 @@ function formatItem(item, index) {
   lines.push(
     item.hasTransparency
       ? "   Background: removed — transparent PNG, cut along the outline"
-      : "   Background: kept (print the whole photo)"
+      : "   Background: kept (print the whole photo)",
+    `   ${borderLabel(item.borderColor)}`
   );
+  if (item.notes) lines.push(`   Notes: ${item.notes}`);
   if (isValidKey(item.imageKey)) {
     const { url, expiresAt } = createDownloadUrl(item.imageKey);
     lines.push(`   Image (link expires ${expiresAt.slice(0, 10)}): ${url}`);

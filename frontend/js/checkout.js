@@ -94,15 +94,26 @@
     return null;
   }
 
-  /** Quantity dropdown for one item: 1 … what's left of the 500 after the other items. */
-  function quantitySelect(item, items) {
+  /** Most this item can have: what's left of the 500 after the other items. */
+  function maxQuantityFor(item, items) {
     const others = items.filter((i) => i.id !== item.id).reduce((n, i) => n + i.quantity, 0);
-    const max = Math.max(item.quantity, Math.max(1, SITE.maxOrderQuantity - others));
-    let options = "";
-    for (let n = 1; n <= max; n++) {
-      options += `<option value="${n}"${n === item.quantity ? " selected" : ""}>${n}</option>`;
-    }
-    return `<label class="qty-select">Qty <select data-qty-select aria-label="Quantity">${options}</select></label>`;
+    return Math.max(item.quantity, Math.max(1, SITE.maxOrderQuantity - others));
+  }
+
+  function quantityInput(item, items) {
+    return `<label class="qty-select">Qty
+      <input type="number" inputmode="numeric" min="1" max="${maxQuantityFor(item, items)}" step="1" value="${item.quantity}"
+        data-qty-input aria-label="Quantity" />
+    </label>`;
+  }
+
+  function optionsLine(item) {
+    const color = item.borderColor && SITE.borderColors.find((c) => c.hex === item.borderColor);
+    const border = item.borderColor
+      ? `Border: <span class="swatch-dot" style="background:${escapeHtml(item.borderColor)}"></span> ${escapeHtml(color ? color.name : item.borderColor)}`
+      : "No border";
+    const notes = item.notes ? ` · Notes: “${escapeHtml(item.notes)}”` : "";
+    return `<p class="cart-item__meta">${border}${notes}</p>`;
   }
 
   // ---------- Render ----------
@@ -131,10 +142,11 @@
             <p class="cart-item__title">${escapeHtml(tier)} standee · ${escapeHtml(materialName(item.material))}</p>
             <p class="cart-item__meta">${escapeHtml(dims)}</p>
             ${texts ? `<p class="cart-item__meta">${texts}</p>` : ""}
+            ${optionsLine(item)}
             ${qualityLine(item)}
           </div>
           <div class="cart-item__actions">
-            ${quantitySelect(item, items)}
+            ${quantityInput(item, items)}
             <span class="cart-item__price">${priced && priced.price ? formatCurrency(priced.price.total) : ""}</span>
             <button type="button" class="link-accent" data-remove style="font-size:0.9rem">Remove</button>
           </div>
@@ -200,12 +212,39 @@
     }
   });
 
+  /** A typed quantity, kept within 1 … the item's max; null while the box is empty. */
+  function typedQuantity(input) {
+    const raw = input.value.trim() === "" ? NaN : Number(input.value);
+    if (!Number.isFinite(raw)) return null;
+    return Math.min(Number(input.max), Math.max(1, Math.round(raw)));
+  }
+
+  // While typing: update the cart, this row's price and the summary, without
+  // rebuilding the list (that would drop focus). On leaving the box: clamp it.
+  listEl.addEventListener("input", (e) => {
+    if (!e.target.matches("[data-qty-input]")) return;
+    const row = e.target.closest(".cart-item");
+    const quantity = typedQuantity(e.target);
+    if (quantity === null) return;
+    Cart.update(row.dataset.id, { quantity });
+    const item = Cart.get().find((i) => i.id === row.dataset.id);
+    const priced = priceItem(item);
+    row.querySelector(".cart-item__price").textContent = priced && priced.price ? formatCurrency(priced.price.total) : "";
+    hideStatus();
+    renderSummary(Cart.get());
+  });
+
   listEl.addEventListener("change", (e) => {
-    if (!e.target.matches("[data-qty-select]")) return;
+    if (!e.target.matches("[data-qty-input]")) return;
     const id = e.target.closest(".cart-item").dataset.id;
-    Cart.update(id, { quantity: Math.max(1, Math.round(Number(e.target.value)) || 1) });
+    const raw = Number(e.target.value);
+    const quantity = typedQuantity(e.target) || Cart.get().find((i) => i.id === id).quantity;
+    Cart.update(id, { quantity });
     hideStatus();
     render();
+    if (raw > quantity) {
+      showStatus(`Max ${quantity} for that design — an order can have ${SITE.maxOrderQuantity} cutouts in total.`, { scroll: false });
+    }
   });
 
   fields.country.addEventListener("change", () => render());
@@ -282,6 +321,8 @@
           quantity: item.quantity,
           textElements: item.textElements || [],
           acceptedLowQuality: item.acceptedLowQuality === true,
+          borderColor: item.borderColor === undefined ? SITE.defaultBorderColor : item.borderColor, // older carts: the old default
+          notes: item.notes || null,
         })),
       });
       const checkout = await Api.post(`/orders/${order.id}/checkout-session`, {});

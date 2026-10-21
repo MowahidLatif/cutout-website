@@ -11,7 +11,7 @@ const { ZipArchive } = require("archiver");
 const ordersService = require("../services/orders");
 const storage = require("../services/storage");
 const { sendShippedNotification } = require("../services/email");
-const { MATERIAL_LABELS, TIER_LABELS, TEXT_STYLE_LABELS, formatFeetInches, plural } = require("../services/catalog");
+const { MATERIAL_LABELS, TIER_LABELS, TEXT_STYLE_LABELS, borderLabel, formatFeetInches, plural } = require("../services/catalog");
 const config = require("../config");
 const { clientIp } = require("../security");
 const { ok, fail, appError } = require("./_respond");
@@ -174,8 +174,10 @@ function orderDetailsText(order) {
     lines.push(
       item.hasTransparency
         ? "  Background: removed — transparent PNG, cut along the outline"
-        : "  Background: kept (print the whole photo)"
+        : "  Background: kept (print the whole photo)",
+      `  ${borderLabel(item.borderColor)}`
     );
+    if (item.notes) lines.push(`  Notes: ${item.notes}`);
   });
   return lines.join("\n") + "\n";
 }

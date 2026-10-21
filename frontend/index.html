@@ -166,10 +166,6 @@
                   <div class="stage__texts" id="stage-texts"></div>
                 </div>
                 <span class="chip stage__sample-tag" id="sample-tag" hidden>Sample photo</span>
-                <div class="stage__busy" id="stage-busy" hidden role="status">
-                  <span class="spinner"></span>
-                  <span id="stage-busy-text">Removing background…</span>
-                </div>
 
                 <div class="dropzone stage__dropzone" id="stage-dropzone" role="button" tabindex="0">
                   <span class="icon-badge icon-badge--round"><svg class="icon"><use href="#i-image-up"/></svg></span>
@@ -306,9 +302,32 @@
               <div class="qty-row">
                 <label class="qty-select">
                   <span id="qty-label">Quantity</span>
-                  <select id="qty" aria-describedby="qty-label"></select>
+                  <input id="qty" type="number" inputmode="numeric" min="1" max="500" step="1" value="1" aria-describedby="qty-hint" />
                 </label>
                 <span class="discount-tag" id="discount-tag" hidden></span>
+              </div>
+              <p class="hint qty-hint" id="qty-hint" aria-live="polite"></p>
+
+              <!-- Per photo, like the quantity. Saved on each order item for the supplier. -->
+              <div class="order-options" id="order-options">
+                <div class="border-option">
+                  <label class="toggle">
+                    <span id="border-label">Border around the cutout</span>
+                    <input id="border-toggle" type="checkbox" checked />
+                    <span class="toggle__track"></span>
+                  </label>
+                  <div class="swatches" id="border-swatches" role="radiogroup" aria-labelledby="border-label"></div>
+                </div>
+                <div class="notes-option">
+                  <button type="button" class="link-accent notes-open" id="notes-open">
+                    <svg class="icon"><use href="#i-plus"/></svg><span id="notes-open-label">Add notes for the supplier</span>
+                  </button>
+                  <div class="notes-field" id="notes-field" hidden>
+                    <label for="notes-input" id="notes-label">Notes for the supplier</label>
+                    <textarea id="notes-input" rows="2" maxlength="150" placeholder="e.g. Keep the hat inside the cut line" aria-describedby="notes-count"></textarea>
+                    <span class="hint notes-count" id="notes-count">0/150</span>
+                  </div>
+                </div>
               </div>
 
               <div class="delivery-box">
@@ -440,12 +459,83 @@
     </div>
   </footer>
 
+  <!-- Background removal review (js/studio.js): loading → review → (trace) → accept. -->
+  <dialog class="modal review-modal" id="review-modal" aria-labelledby="review-title">
+    <div class="modal__head">
+      <div>
+        <p class="modal__eyebrow" id="review-count"></p>
+        <h2 class="modal__title" id="review-title">Removing the background…</h2>
+      </div>
+      <button type="button" class="icon-btn modal__close" id="review-close" aria-label="Close and keep this cutout">
+        <svg class="icon"><use href="#i-x"/></svg>
+      </button>
+    </div>
+    <p class="review-error" id="review-error" role="alert" hidden></p>
+
+    <div class="review-pane" data-pane="loading">
+      <div class="review-loading" role="status">
+        <span class="spinner spinner--lg"></span>
+        <p id="review-progress">Removing the background…</p>
+        <p class="hint">This happens on your device — your photo isn't sent anywhere extra.</p>
+      </div>
+    </div>
+
+    <div class="review-pane" data-pane="review" hidden>
+      <div class="review-image checker"><img id="review-img" alt="Your photo with the background removed" /></div>
+      <p class="hint review-hint" id="review-hint">Check the edges. Missed a bit, or kept too much? Trace it yourself.</p>
+      <div class="modal__actions">
+        <button type="button" class="btn btn-secondary" id="review-edit">
+          <svg class="icon"><use href="#i-pencil"/></svg>Edit / Trace
+        </button>
+        <button type="button" class="btn btn-primary" id="review-accept">
+          <svg class="icon"><use href="#i-check"/></svg>Accept
+        </button>
+      </div>
+      <button type="button" class="link-accent review-secondary" id="review-keep-original">Keep the original background instead</button>
+    </div>
+
+    <div class="review-pane" data-pane="failed" hidden>
+      <div class="review-image"><img id="review-failed-img" alt="Your photo as uploaded" /></div>
+      <p class="review-hint">We couldn't remove the background automatically. You can print the photo as it is, or trace around what you want to keep.</p>
+      <div class="modal__actions">
+        <button type="button" class="btn btn-secondary" id="review-trace-original">
+          <svg class="icon"><use href="#i-lasso"/></svg>Trace it myself
+        </button>
+        <button type="button" class="btn btn-primary" id="review-use-original">Use the original</button>
+      </div>
+      <button type="button" class="link-accent review-secondary" id="review-retry">Try the automatic removal again</button>
+    </div>
+
+    <div class="review-pane" data-pane="trace" hidden>
+      <div class="trace-toolbar">
+        <div class="segmented" role="group" aria-label="Tool">
+          <button type="button" data-trace-tool="lasso" aria-pressed="true"><svg class="icon"><use href="#i-lasso"/></svg>Lasso</button>
+          <button type="button" data-trace-tool="crop" aria-pressed="false"><svg class="icon"><use href="#i-crop"/></svg>Crop box</button>
+        </div>
+        <div class="segmented" role="group" aria-label="Trace on" id="trace-sources">
+          <button type="button" data-trace-source="cutout" aria-pressed="true">AI cutout</button>
+          <button type="button" data-trace-source="original" aria-pressed="false">Original photo</button>
+        </div>
+      </div>
+      <div class="trace-canvas-wrap checker"><canvas id="trace-canvas" aria-label="Drawing area: drag around the part of the photo to keep"></canvas></div>
+      <p class="hint" id="trace-hint">Drag around what you want to keep — everything outside becomes transparent.</p>
+      <div class="modal__actions trace-actions">
+        <button type="button" class="btn btn-ghost" id="trace-undo" disabled><svg class="icon"><use href="#i-undo"/></svg>Undo</button>
+        <button type="button" class="btn btn-ghost" id="trace-reset" disabled>Reset</button>
+        <span class="trace-actions__spacer"></span>
+        <button type="button" class="btn btn-secondary" id="trace-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="trace-done" disabled>Done</button>
+      </div>
+    </div>
+  </dialog>
+
   <script src="js/site-config.js"></script>
   <script src="js/pricing.js"></script>
   <script src="js/api.js"></script>
   <script src="js/cart.js"></script>
   <script src="js/layout.js"></script>
   <script src="js/background-removal.js"></script>
+  <script src="js/trace-editor.js"></script>
   <script src="js/studio.js"></script>
 </body>
 </html>

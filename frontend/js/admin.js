@@ -283,6 +283,11 @@
     }
   }
 
+  function borderName(hex) {
+    const color = SITE.borderColors.find((c) => c.hex === hex);
+    return color ? color.name : "Custom";
+  }
+
   function renderItem(item) {
     const size = item.widthIn
       ? `${formatFeetInches(item.heightIn)} tall × ${formatFeetInches(item.widthIn)} wide`
@@ -298,6 +303,12 @@
         ${(item.textElements || []).map((el) => `<p class="hint">${escapeHtml(el.style)}: “${escapeHtml(el.text)}”</p>`).join("")}
         ${quality ? `<p class="hint">${quality}</p>` : ""}
         <p class="hint">${item.hasTransparency ? "<strong>Background removed</strong> — transparent PNG, cut along the outline" : "Background kept — print the whole photo"}</p>
+        <p class="hint">${
+          item.borderColor
+            ? `Border: <span class="swatch-dot" style="background:${escapeHtml(item.borderColor)}"></span> ${escapeHtml(borderName(item.borderColor))} (${escapeHtml(item.borderColor)})`
+            : "Border: none"
+        }</p>
+        ${item.notes ? `<p class="hint"><strong>Customer notes:</strong> ${escapeHtml(item.notes)}</p>` : ""}
         <div class="item-link">${renderLink(item.downloadUrl, item.downloadExpiresAt)}</div>
       </div>`;
   }

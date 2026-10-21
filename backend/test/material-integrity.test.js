@@ -23,6 +23,14 @@ test.before(async () => {
 test.beforeEach(() => db.reset());
 test.after(() => db.close());
 
+test("the storefront's border colours are exactly the backend's palette", () => {
+  assert.deepEqual(
+    Object.fromEntries(SITE.borderColors.map((c) => [c.hex, c.name])),
+    catalog.BORDER_COLORS
+  );
+  assert.ok(catalog.BORDER_COLORS[SITE.defaultBorderColor]);
+});
+
 test("every storefront material maps to a valid backend material with a matching label", async () => {
   const allowed = (await db.query("SELECT DISTINCT material FROM pricing_config")).rows.map((r) => r.material);
   for (const m of SITE.materials) {

@@ -854,8 +854,12 @@ p.lead {
   width: 100%;
   height: 100%;
   object-fit: fill; /* follows the chosen width × height exactly */
-  border: 6px solid #fff;
+  border: 6px solid var(--edge, #fff); /* --edge: the chosen border colour (studio.js) */
   border-radius: 10px;
+}
+
+.stage__figure.no-border img {
+  border-width: 0;
 }
 
 .stage__texts {
@@ -1028,12 +1032,21 @@ p.lead {
   color: var(--muted);
 }
 
-.tray-card__qty select,
-.qty-select select {
-  width: auto;
-  min-width: 4.75rem;
+.tray-card__qty input,
+.qty-select input {
+  width: 5.5rem;
   padding: 0.4rem 0.6rem;
   border-radius: 10px;
+  text-align: center;
+}
+
+.qty-hint:empty {
+  display: none;
+}
+
+.qty-hint {
+  margin: 0.4rem 0 0;
+  color: var(--error);
 }
 
 .tray-card__remove {
@@ -1109,15 +1122,6 @@ p.lead {
   }
 }
 
-.spinner-overlay {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(255, 253, 250, 0.7);
-  border-radius: 12px;
-}
-
 .tray-card__thumb-wrap {
   position: relative;
   display: block;
@@ -1134,29 +1138,12 @@ p.lead {
   color: var(--ink-soft);
 }
 
-.tray-card__retry {
+.tray-card__review {
   font-size: 0.8rem;
   text-align: left;
 }
 
-.stage__busy {
-  position: absolute;
-  left: 50%;
-  top: 45%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  max-width: 85%;
-  padding: 0.9rem 1.2rem;
-  border-radius: 16px;
-  background: rgba(255, 253, 250, 0.95);
-  box-shadow: var(--shadow-pop);
-  font-weight: 600;
-  z-index: 2;
-}
-
-/* A cut-out standee: no photo frame, a white die-cut edge and a shadow. */
+/* A cut-out standee: no photo frame, a die-cut edge in the border colour and a shadow. */
 .stage__figure.is-cutout {
   filter: none;
 }
@@ -1165,8 +1152,279 @@ p.lead {
   border: 0;
   border-radius: 0;
   object-fit: contain;
-  filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff) drop-shadow(0 -3px 0 #fff)
+  filter: drop-shadow(3px 0 0 var(--edge, #fff)) drop-shadow(-3px 0 0 var(--edge, #fff))
+    drop-shadow(0 3px 0 var(--edge, #fff)) drop-shadow(0 -3px 0 var(--edge, #fff))
     drop-shadow(0 10px 14px rgba(31, 25, 21, 0.22));
+}
+
+.stage__figure.is-cutout.no-border img {
+  filter: drop-shadow(0 10px 14px rgba(31, 25, 21, 0.22));
+}
+
+/* Light checkerboard behind anything with transparency. */
+.checker {
+  background: repeating-conic-gradient(#f1ebe3 0% 25%, #fffdfa 0% 50%) 50% / 16px 16px;
+}
+
+/* ---------- Background review modal (index.html #review-modal) ---------- */
+.modal {
+  width: min(600px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 1.5rem;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
+  overflow-y: auto;
+}
+
+.modal::backdrop {
+  background: rgba(31, 25, 21, 0.55);
+}
+
+.modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.modal__eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.modal__title {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.modal__close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.review-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.review-loading p {
+  margin: 0;
+}
+
+.review-loading .hint {
+  font-weight: 400;
+}
+
+.spinner--lg {
+  width: 48px;
+  height: 48px;
+  border-width: 4px;
+}
+
+.review-image {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.review-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 55dvh;
+  object-fit: contain;
+}
+
+.review-hint {
+  margin: 0.75rem 0 0;
+}
+
+.review-secondary {
+  display: block;
+  margin: 0.9rem 0 0 auto;
+  font-size: 0.9rem;
+}
+
+.review-error {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: #fbe9e4;
+  color: var(--error);
+  font-weight: 500;
+}
+
+.trace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.trace-toolbar .segmented button {
+  min-height: 40px;
+}
+
+.trace-toolbar .segmented button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.trace-canvas-wrap {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.trace-canvas-wrap canvas {
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.trace-actions .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.trace-actions__spacer {
+  flex: 1;
+}
+
+@media (max-width: 719px) {
+  .modal {
+    padding: 1.1rem;
+  }
+
+  .trace-actions .btn {
+    padding-inline: 0.9rem;
+  }
+}
+
+/* ---------- Order options (price card): border + notes ---------- */
+.order-options {
+  display: grid;
+  gap: 0.9rem;
+  margin: 1rem 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.border-option .toggle {
+  justify-content: space-between;
+  width: 100%;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.swatch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0.3rem 0.7rem 0.3rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.swatch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.swatch__dot,
+.swatch-dot {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(31, 25, 21, 0.2);
+  vertical-align: middle;
+}
+
+.swatch-dot {
+  width: 14px;
+  height: 14px;
+}
+
+.swatch:has(input:checked) {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+  font-weight: 600;
+}
+
+.swatch:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.swatch:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.notes-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 40px;
+}
+
+.notes-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.notes-field label {
+  font-weight: 600;
+}
+
+.notes-field textarea {
+  resize: vertical;
+  min-height: 3.5rem;
+}
+
+.notes-count {
+  justify-self: end;
+  margin: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

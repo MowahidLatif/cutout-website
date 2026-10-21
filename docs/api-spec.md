@@ -143,7 +143,8 @@ Request:
       "widthIn": 51,
       "quantity": 3,
       "textElements": [{ "style": "bubble", "text": "Happy 40th, Dave!" }],
-      "notes": "optional"
+      "borderColor": "#000000",
+      "notes": "Keep the hat inside the cut line"
     }
   ]
 }
@@ -156,7 +157,14 @@ in the request is ignored, so a 7 ft standee can't be priced as "small".
 Validation (each rule is a 400 `VALIDATION_ERROR` with a specific message):
 - `customerName` (**required**, up to 100 characters). Field limits:
   `customerEmail` 254, `customerPhone` 30, address lines, city and region
-  200, `postalCode` 20, item `notes` 2000.
+  200, `postalCode` 20, item `notes` 150.
+- **Item `borderColor`:** optional. Omitted or `null` means no border.
+  Otherwise one of `#FFFFFF` White, `#000000` Black, `#1E5AA8` Blue,
+  `#2E8B57` Green, `#F28C28` Orange, `#D62828` Red or `#F7C948` Yellow
+  (case-insensitive, stored uppercase); anything else is a 400. Borders
+  are free (no price change).
+- **Item `notes`:** optional instructions for the supplier, up to 150
+  characters. Line breaks are folded into spaces.
 - `acceptedFinalSale` must be exactly `true`: the customer ticked "I understand each standee is
   custom-made and final sale" at checkout. The server stores `finalSaleAcceptedAt` (now) and
   `finalSalePolicyVersion`, which is evidence if a payment is later disputed.
@@ -230,7 +238,7 @@ Response: the full order.
     { "id": "…", "imageKey": "….jpg", "sizeTier": "life_size", "material": "coroplast",
       "heightIn": 68, "widthIn": 51, "textElements": [{ "style": "bubble", "text": "Happy 40th, Dave!" }],
       "imageWidthPx": 3024, "imageHeightPx": 4032, "printPpi": 59, "lowQualityAccepted": false,
-      "hasTransparency": false,
+      "hasTransparency": false, "borderColor": "#000000", "notes": "Keep the hat inside the cut line",
       "quantity": 3, "unitPrice": 76, "lineTotal": 228 }
   ]
 }
