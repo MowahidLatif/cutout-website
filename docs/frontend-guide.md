@@ -49,6 +49,8 @@ frontend/
     ├── layout.js         — mobile nav toggle, footer year, cart badge
     ├── background-removal.js — window.BackgroundRemoval: in-browser background
     │                       removal (Transformers.js + MODNet, lazy-loaded)
+    ├── cutout-cleanup.js — window.CutoutCleanup: fills holes inside a cutout and
+    │                       trims its empty margins (before upload)
     ├── trace-editor.js   — window.TraceEditor: the review modal's manual
     │                       lasso / crop-box editor (canvas, pointer events)
     ├── studio.js         — the studio on index.html
@@ -259,6 +261,19 @@ limits) and `makeThumbnail(src)`.
          **"Review cutout"** link on the tray card reopens it. A failure
          after the photo was reviewed shows a `#tray-message` notice
          instead.
+     - **Clean-up** (`js/cutout-cleanup.js`), since a standee is cut along
+       its outer outline only:
+       - `fillHoles` makes everything the outside background can't reach
+         solid. This fixes MODNet punching holes in a white shirt or a
+         watermark; the original colours come back. Gaps open to an edge
+         (between the legs) stay transparent, and the outline keeps its
+         soft edge.
+       - `trimToContent` crops the empty margins, from both the AI cutout
+         and traced results. The image's bottom is then the subject's
+         feet, and the chosen height is the subject's height.
+       - The stage also pins cutouts to the floor
+         (`object-position: center bottom`), even with unlocked
+         proportions.
      - **Two versions per design:** `design.original` and `design.cutout`
        (`{ key, src, width, height }`).
        - `applyBackgroundChoice` points `imageKey` / `src` / pixel size /

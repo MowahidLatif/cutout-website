@@ -53,7 +53,8 @@
    *
    * @param {string} imageUrl any URL the page can fetch (same-origin or blob:)
    * @param {{ onStatus?: (s: { phase: "queued"|"downloading"|"processing", percent?: number }) => void }} [options]
-   * @returns {Promise<Blob>} a PNG with a transparent background, same size as the input
+   * @returns {Promise<Blob>} a PNG of the subject on a transparent background,
+   *   with holes inside it filled and empty margins trimmed (js/cutout-cleanup.js)
    */
   function remove(imageUrl, { onStatus } = {}) {
     if (onStatus) onStatus({ phase: "queued" });
@@ -62,7 +63,14 @@
       if (onStatus) onStatus({ phase: "processing" });
       const output = await remover(new URL(imageUrl, window.location.href).href);
       const image = Array.isArray(output) ? output[0] : output;
-      return image.toBlob("image/png");
+      if (image.channels !== 4) return image.toBlob("image/png");
+      const rgba = new Uint8ClampedArray(image.data);
+      CutoutCleanup.fillHoles(rgba, image.width, image.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      canvas.getContext("2d").putImageData(new ImageData(rgba, image.width, image.height), 0, 0);
+      return CutoutCleanup.toPngBlob(CutoutCleanup.trimToContent(canvas));
     });
     queue = run.catch(() => {});
     return run;

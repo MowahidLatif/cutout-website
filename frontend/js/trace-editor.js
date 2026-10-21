@@ -7,8 +7,9 @@
  *   editor.undo(); editor.reset(); editor.canUndo();
  *   const png = await editor.toBlob();
  *
- * Lasso: drag around what to keep; everything outside becomes transparent
- * (same size image). Crop box: drag a rectangle; the image is cut down to it.
+ * Lasso: drag around what to keep; everything outside becomes transparent.
+ * Crop box: drag a rectangle; the image is cut down to it. The exported PNG
+ * is trimmed to its visible pixels (js/cutout-cleanup.js).
  * Each shape applies on top of the previous result. Works with mouse, pen
  * and touch (pointer events).
  *
@@ -198,9 +199,7 @@
       edited: () => history.length > 1,
       layout,
       toBlob() {
-        return new Promise((resolve, reject) =>
-          current().toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't save the edited image."))), "image/png")
-        );
+        return CutoutCleanup.toPngBlob(CutoutCleanup.trimToContent(current()));
       },
     };
   }

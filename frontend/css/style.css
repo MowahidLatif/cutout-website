@@ -1152,6 +1152,7 @@ p.lead {
   border: 0;
   border-radius: 0;
   object-fit: contain;
+  object-position: center bottom; /* feet on the floor, even when letterboxed */
   filter: drop-shadow(3px 0 0 var(--edge, #fff)) drop-shadow(-3px 0 0 var(--edge, #fff))
     drop-shadow(0 3px 0 var(--edge, #fff)) drop-shadow(0 -3px 0 var(--edge, #fff))
     drop-shadow(0 10px 14px rgba(31, 25, 21, 0.22));
