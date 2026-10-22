@@ -77,9 +77,13 @@
       heightPx: item.heightPx,
       heightIn: item.heightIn,
       widthIn: item.widthIn,
+      blurry: item.blurry,
+      compressed: item.compressed,
+      vector: item.vector,
     });
     const accepted = q.grade === "low" && item.acceptedLowQuality ? " (you confirmed)" : "";
-    return `<p class="cart-item__meta">Print quality: ${SITE.qualityLabels[q.grade]}${accepted}</p>`;
+    const detail = q.vector ? " · vector" : q.issue === "blurry" ? " · looks blurry" : q.issue === "compressed" ? " · looks compressed" : "";
+    return `<p class="cart-item__meta">Print quality: ${SITE.qualityLabels[q.grade]}${detail}${accepted}</p>`;
   }
 
   /** What breaks the per-order limits, if anything (e.g. an old cart). */

@@ -45,6 +45,7 @@ function createApp() {
   app.post("/api/orders", limits.createOrder);
   app.post("/api/orders/:id/checkout-session", limits.checkout);
   app.post("/api/uploads", limits.upload);
+  app.post("/api/uploads/:key/vectorize", limits.upload);
   app.get("/api/orders/:id", limits.lookup);
   app.use("/api/admin", limits.adminAll, limits.adminAuthFailures);
 

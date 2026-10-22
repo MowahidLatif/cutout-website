@@ -104,13 +104,34 @@ checked and cleaned up:
   phone photos print upright. EXIF (including GPS) is stripped, and the
   colour profile is kept.
 - **Name:** stored under a random key (`<uuid>.<ext>`).
+- **Optional field `kind`:** `"cutout"` marks the studio's own
+  background-removed or traced PNG, which skips the screenshot and graphic
+  checks below.
+- **Image audit** (`services/imageAnalysis.js`, informational; it never
+  rejects an upload):
+  - `isWebOrScreenshot`: the file looks like a screenshot or web download,
+    not a camera original. Reasons:
+    - a screenshot or messaging-app file name
+    - or, with no camera EXIF (make, model or exposure): a phone-screen shape
+      (16:9 … 21:9), a PNG file, or a long side ≤ 2048 px
+    - HEIC and PDF are never flagged
+    - `sourceReasons` lists why, in plain English
+  - `isBlurry`: the sharpest regions are still soft (per-tile Laplacian
+    variance).
+  - `isCompressed`: heavy JPEG 8×8 blocking.
+  - `looksLikeGraphic`: flat artwork (few colours, crisp edges, no camera
+    EXIF). The studio offers to vectorize it.
+  - Blurry or compressed caps the print score at 59 (Fair). The server
+    re-checks the stored file when the order is placed.
 
 Response (201):
 ```json
 { "data": {
     "imageKey": "3f2b…0b3c.jpg", "width": 3024, "height": 4032,
     "previewUrl": "/api/files/3f2b…0b3c.jpg?exp=…&sig=…",
-    "note": null
+    "note": null,
+    "audit": { "isWebOrScreenshot": false, "sourceReasons": [], "isBlurry": false,
+               "isCompressed": false, "looksLikeGraphic": false, "sharpness": 1203 }
   }, "error": null }
 ```
 `previewUrl` is a 24-hour signed link to the **processed** image (rotated,
@@ -119,8 +140,29 @@ show PDF or HEIC files as images. `note` is set for multi-page PDFs, e.g.
 "Your PDF has 3 pages — we'll print page 1." 
 
 Any failed check, a missing file, or a field not named `image` is a 400
-`VALIDATION_ERROR`. This endpoint is public and not rate-limited yet (a
-known gap).
+`VALIDATION_ERROR`. Rate-limited with the other uploads (40 per 15 min).
+
+### `POST /uploads/:key/vectorize`
+Turns a stored raster upload (jpg/png/webp) of flat artwork into vectors
+(`services/vectorize.js`, ImageTracer):
+1. The edge-connected background colour is removed.
+2. The image is snapped to its main colours, traced, and trimmed to its
+   content.
+3. Three files are stored with one uuid:
+   - `<uuid>.svg`: the preview, and the key the order uses
+   - `<uuid>.pdf`: the vector print file
+   - `<uuid>.png`: a ~4000 px transparent fallback
+
+No body. Shares the upload rate limit. An unknown, SVG or PDF key is a 400.
+
+Response (201):
+```json
+{ "data": { "imageKey": "9c1e…77aa.svg", "width": 4000, "height": 1921,
+            "previewUrl": "/api/files/9c1e…77aa.svg?exp=…&sig=…", "vector": true }, "error": null }
+```
+An order item with an `.svg` key prints from the PDF. Its print score is
+always 100 (`isVector: true`, `printPpi: null`). The supplier email, admin
+detail (`downloadFiles`) and bundle carry the PDF and the PNG fallback.
 
 ### `POST /orders`
 Creates an order in `pending_payment` status. The server computes every
@@ -239,6 +281,7 @@ Response: the full order.
       "heightIn": 68, "widthIn": 51, "textElements": [{ "style": "bubble", "text": "Happy 40th, Dave!" }],
       "imageWidthPx": 3024, "imageHeightPx": 4032, "printPpi": 59, "lowQualityAccepted": false,
       "hasTransparency": false, "borderColor": "#000000", "notes": "Keep the hat inside the cut line",
+      "isBlurry": false, "isCompressed": false, "isVector": false,
       "quantity": 3, "unitPrice": 76, "lineTotal": 228 }
   ]
 }
@@ -261,6 +304,11 @@ A bad key, a bad signature or an expired link all return a plain-text
 `FILE_LINK_SECRET` invalidates every outstanding link.
 
 ## Webhook
+
+Keys can also be `.svg` / `.pdf` (vectorized graphics). An SVG is sent
+with `Content-Security-Policy: sandbox; default-src 'none'` and as an
+attachment. We generate every SVG ourselves (paths only); customers can't
+upload SVG.
 
 ### `POST /webhooks/stripe`
 Raw body, verified with the `Stripe-Signature` header and

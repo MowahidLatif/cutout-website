@@ -107,19 +107,25 @@
   /**
    * Print quality as a 0–100 score: min(100, pixels-per-inch × 2), capped at
    * 59 when the photo is under 1000 px on its long side. Grades: great ≥ 90 ·
-   * good ≥ 60 · fair ≥ 36 · low below. Identical copy in
-   * backend/src/services/pricing.js, which re-checks it when the order is placed.
+   * good ≥ 60 · fair ≥ 36 · low below. Also capped at 59 when the upload audit
+   * says the photo looks blurry or heavily compressed (`issue`); a vector graphic
+   * is always 100. Identical copy in backend/src/services/pricing.js, which
+   * re-checks it (from the stored file) when the order is placed.
    *
-   * @param {{ widthPx:number, heightPx:number, heightIn:number, widthIn?:number|null }} params
-   * @returns {{ ppi: number, score: number, grade: "great"|"good"|"fair"|"low" }}
+   * @param {{ widthPx:number, heightPx:number, heightIn:number, widthIn?:number|null,
+   *   blurry?:boolean, compressed?:boolean, vector?:boolean }} params
+   * @returns {{ ppi: number|null, score: number, grade: "great"|"good"|"fair"|"low", issue: "blurry"|"compressed"|null, vector?: true }}
    */
-  function printQuality({ widthPx, heightPx, heightIn, widthIn }) {
+  function printQuality({ widthPx, heightPx, heightIn, widthIn, blurry = false, compressed = false, vector = false }) {
+    if (vector) return { ppi: null, score: 100, grade: "great", issue: null, vector: true };
     const printedWidth = widthIn || (heightIn * widthPx) / heightPx;
     const ppi = Math.round(Math.min(widthPx / printedWidth, heightPx / heightIn));
     let score = Math.min(100, ppi * 2);
     if (Math.max(widthPx, heightPx) < 1000) score = Math.min(score, 59);
+    const issue = blurry ? "blurry" : compressed ? "compressed" : null;
+    if (issue) score = Math.min(score, 59);
     const grade = score >= 90 ? "great" : score >= 60 ? "good" : score >= 36 ? "fair" : "low";
-    return { ppi, score, grade };
+    return { ppi, score, grade, issue };
   }
 
   function round2(n) {

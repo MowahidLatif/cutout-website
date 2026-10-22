@@ -33,7 +33,8 @@
     // One design per photo:
     // { id, name, file, objectUrl, src, aspect, isSample, uploadPromise, imageKey,
     //   uploadError, ...settings,
-    //   original: { key, src, width, height }, cutout: { … } | null,   // the two printable versions
+    //   original: { key, src, width, height, blurry, compressed }, cutout: { …, vector? } | null,
+    //   webOrScreenshot, graphic (upload audit: a screenshot / flat artwork),
     //   bgStatus: null | "processing" | "done" | "failed", bgProgress,
     //   reviewed (seen in the review modal), edited (cutout traced by hand) }
     // `imageKey` / `src` / pixel size always follow the version the customer chose.
@@ -114,6 +115,14 @@
     reviewProgress: $("review-progress"),
     reviewImg: $("review-img"),
     reviewFailedImg: $("review-failed-img"),
+    reviewGraphicImg: $("review-graphic-img"),
+    reviewEdit: $("review-edit"),
+    reviewKeepOriginal: $("review-keep-original"),
+    sourceNote: $("source-note"),
+    lensToggle: $("lens-toggle"),
+    lens: $("print-lens"),
+    lensCanvas: $("print-lens-canvas"),
+    lensCaption: $("print-lens-caption"),
     traceCanvas: $("trace-canvas"),
     traceHint: $("trace-hint"),
     traceUndo: $("trace-undo"),
@@ -180,6 +189,9 @@
       heightPx: design.heightPx,
       heightIn: design.heightIn,
       widthIn: widthOf(design),
+      blurry: Boolean(design.blurry),
+      compressed: Boolean(design.compressed),
+      vector: Boolean(design.vector),
     });
   }
 
@@ -399,9 +411,21 @@
         design.aspect = result.width / result.height;
         design.src = result.previewUrl;
         design.note = result.note || null;
-        design.original = { key: result.imageKey, src: result.previewUrl, width: result.width, height: result.height };
+        const audit = result.audit || {};
+        design.original = {
+          key: result.imageKey,
+          src: result.previewUrl,
+          width: result.width,
+          height: result.height,
+          blurry: Boolean(audit.isBlurry),
+          compressed: Boolean(audit.isCompressed),
+        };
+        design.webOrScreenshot = Boolean(audit.isWebOrScreenshot);
+        // Flat artwork is offered as a vector instead of the photo background remover.
+        design.graphic = Boolean(audit.looksLikeGraphic);
+        applyBackgroundChoice(design);
         if (design.removeBackground) {
-          startBackgroundRemoval(design);
+          if (!design.graphic) startBackgroundRemoval(design);
           openNextReview();
         } else {
           design.reviewed = true;
@@ -473,6 +497,10 @@
       design.widthPx = version.width;
       design.heightPx = version.height;
       design.aspect = version.width / version.height;
+      // The image audit's verdict follows the version too (printQuality caps).
+      design.blurry = Boolean(version.blurry);
+      design.compressed = Boolean(version.compressed);
+      design.vector = Boolean(version.vector);
     }
   }
 
@@ -486,7 +514,9 @@
   function backgroundLabel(d) {
     if (d.bgStatus === "processing") return "Background: removing…";
     if (d.bgStatus === "failed") return "Background: kept (removal failed)";
-    if (!d.removeBackground) return "Background: kept";
+    if (d.graphic && !d.cutout) return "Graphic: kept as is";
+    if (!d.removeBackground) return d.graphic ? "Graphic: kept as is" : "Background: kept";
+    if (d.cutout && d.cutout.vector) return "✓ Vector graphic";
     if (d.cutout && d.edited) return "✓ Custom cutout";
     return d.cutout ? "✓ Background removed" : "Background: kept";
   }
@@ -536,9 +566,18 @@
   async function uploadCutout(design, blob) {
     const formData = new FormData();
     formData.append("image", new File([blob], "cutout.png", { type: "image/png" }));
+    formData.append("kind", "cutout"); // ours: skip the screenshot / graphic checks
     const result = await Api.upload("/uploads", formData);
+    const audit = result.audit || {};
     if (design.cutout) URL.revokeObjectURL(design.cutout.src);
-    design.cutout = { key: result.imageKey, src: URL.createObjectURL(blob), width: result.width, height: result.height };
+    design.cutout = {
+      key: result.imageKey,
+      src: URL.createObjectURL(blob),
+      width: result.width,
+      height: result.height,
+      blurry: Boolean(audit.isBlurry),
+      compressed: Boolean(audit.isCompressed),
+    };
   }
 
   function backgroundFailed(design, reason) {
@@ -560,7 +599,7 @@
   // ---------- Review modal (after each upload: loading → review → optional trace) ----------
   // One photo at a time. Closing it (X, Escape, backdrop) keeps the AI cutout,
   // same as Accept; the next photo waiting for review opens after it.
-  const review = { design: null, tracing: false, saving: false, error: "", editor: null, traceSource: "cutout" };
+  const review = { design: null, tracing: false, saving: false, vectorizing: false, error: "", editor: null, traceSource: "cutout" };
 
   /** Photos still to review, in tray order (one may still be uploading). */
   function waitingForReview() {
@@ -607,7 +646,9 @@
 
   function reviewPane(d) {
     if (review.tracing) return "trace";
-    if (review.saving || d.bgStatus === "processing" || (!d.cutout && d.bgStatus !== "failed")) return "loading";
+    if (review.saving || review.vectorizing || !d.original) return "loading";
+    if (d.graphic && !d.cutout && d.bgStatus !== "processing") return "graphic";
+    if (d.bgStatus === "processing" || (!d.cutout && d.bgStatus !== "failed")) return "loading";
     return d.bgStatus === "failed" && !d.cutout ? "failed" : "review";
   }
 
@@ -618,9 +659,11 @@
     els.reviewPanes.forEach((p) => (p.hidden = p.dataset.pane !== pane));
     const real = realDesigns();
     els.reviewCount.textContent = real.length > 1 ? `Photo ${real.indexOf(d) + 1} of ${real.length}` : "Your photo";
+    const isVector = Boolean(d.cutout && d.cutout.vector);
     els.reviewTitle.textContent = {
-      loading: review.saving ? "Saving your cutout…" : "Removing the background…",
-      review: d.edited ? "Here's your traced cutout" : "How does this look?",
+      loading: review.saving ? "Saving your cutout…" : review.vectorizing ? "Making it a vector…" : "Removing the background…",
+      graphic: "Logo or graphic?",
+      review: isVector ? "Here's your vector" : d.edited ? "Here's your traced cutout" : "How does this look?",
       failed: "Background removal didn't work",
       trace: "Trace your cutout",
     }[pane];
@@ -629,12 +672,42 @@
     if (pane === "loading") {
       els.reviewProgress.textContent = review.saving
         ? "Uploading the edited cutout…"
-        : d.original
+        : review.vectorizing
+          ? "Tracing the shapes — this takes a few seconds…"
+          : d.original
           ? backgroundProgressText(d)
           : "Uploading your photo…";
     }
     if (pane === "review" && els.reviewImg.getAttribute("src") !== d.cutout.src) els.reviewImg.src = d.cutout.src;
+    if (pane === "review") {
+      // A vector is already exact; tracing applies to photos.
+      els.reviewEdit.hidden = isVector;
+      els.reviewKeepOriginal.textContent = isVector ? "Keep the original image instead" : "Keep the original background instead";
+    }
+    if (pane === "graphic" && els.reviewGraphicImg.getAttribute("src") !== d.original.src) els.reviewGraphicImg.src = d.original.src;
     if (pane === "failed" && els.reviewFailedImg.getAttribute("src") !== d.original.src) els.reviewFailedImg.src = d.original.src;
+  }
+
+  /** Flat artwork → vector on the server (SVG preview, PDF + PNG print files). */
+  async function vectorize(d) {
+    review.vectorizing = true;
+    review.error = "";
+    renderReview();
+    try {
+      const result = await Api.post(`/uploads/${encodeURIComponent(d.original.key)}/vectorize`, {});
+      if (d.cutout) URL.revokeObjectURL(d.cutout.src);
+      d.cutout = { key: result.imageKey, src: result.previewUrl, width: result.width, height: result.height, vector: true };
+      d.bgStatus = "done";
+      d.edited = false;
+      d.removeBackground = true;
+      applyBackgroundChoice(d);
+    } catch (err) {
+      console.warn("Vectorizing failed:", err);
+      review.error = `We couldn't turn it into a vector (${err.message}). You can keep it as is.`;
+    }
+    review.vectorizing = false;
+    renderAll();
+    renderReview();
   }
 
   // Trace mode (js/trace-editor.js)
@@ -703,6 +776,15 @@
   $("review-use-original").addEventListener("click", () => finishReview("original"));
   $("review-close").addEventListener("click", () => finishReview("keep"));
   $("review-edit").addEventListener("click", () => startTrace("cutout"));
+  $("review-keep-graphic").addEventListener("click", () => finishReview("original"));
+  $("review-vectorize").addEventListener("click", () => vectorize(review.design));
+  $("review-is-photo").addEventListener("click", () => {
+    const d = review.design;
+    d.graphic = false;
+    d.removeBackground = true;
+    startBackgroundRemoval(d);
+    renderReview();
+  });
   $("review-trace-original").addEventListener("click", () => startTrace("original"));
   $("review-retry").addEventListener("click", () => {
     const d = review.design;
@@ -800,11 +882,12 @@
             </span>
             <span class="tray-card__name">${escapeHtml(d.name)}</span>
             <span class="tray-card__status">${escapeHtml(status)}</span>
+            ${d.webOrScreenshot ? '<span class="tray-card__tag">Screenshot / web photo</span>' : ""}
             ${d.isSample || !d.imageKey ? "" : `<span class="tray-card__bg">${escapeHtml(backgroundLabel(d))}</span>`}
           </button>
           ${
-            !d.isSample && d.original && (d.bgStatus === "done" || d.bgStatus === "failed")
-              ? `<button type="button" class="link-accent tray-card__review" data-review>Review cutout</button>`
+            !d.isSample && d.original && (d.graphic || d.bgStatus === "done" || d.bgStatus === "failed")
+              ? `<button type="button" class="link-accent tray-card__review" data-review>${d.graphic ? "Review graphic" : "Review cutout"}</button>`
               : ""
           }
           ${
@@ -1157,6 +1240,7 @@
     els.replacePhoto.hidden = photoSlotsLeft() <= 0;
     layoutStage();
     renderStageTexts();
+    renderLens();
   }
 
   function renderStageTexts() {
@@ -1165,6 +1249,128 @@
       .map((t) => `<div class="stage-text stage-text--${t.style}">${escapeHtml(t.text.trim())}</div>`)
       .join("");
   }
+
+  // ---------- Print detail lens (actual printed size) ----------
+  // A 200 × 200 CSS px window. CSS px are 1/96 in, so it shows 200/96 ≈ 2.08
+  // printed inches of the photo — however many photo pixels that is at the
+  // chosen size — scaled the way a printer would. Low resolution or blur is
+  // visible directly instead of being a number.
+  const LENS_PX = 200;
+  const LENS_IN = LENS_PX / 96;
+  const lens = { open: false, focus: null, imageId: null }; // focus: {x, y} as 0–1 of the image
+
+  /**
+   * Default spot: the centre, or for a cutout the top quarter (usually the
+   * face) — moved to the nearest visible pixel, so a logo with a gap in the
+   * middle doesn't open on empty space.
+   */
+  function lensDefaultFocus(d, img) {
+    const target = d.cutout && d.removeBackground && !d.vector ? { x: 0.5, y: 0.125 } : { x: 0.5, y: 0.5 };
+    const GRID = 32;
+    const probe = document.createElement("canvas");
+    probe.width = GRID;
+    probe.height = GRID;
+    const ctx = probe.getContext("2d");
+    ctx.drawImage(img, 0, 0, GRID, GRID);
+    const { data } = ctx.getImageData(0, 0, GRID, GRID);
+    let best = null;
+    for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < GRID; x++) {
+        if (data[(y * GRID + x) * 4 + 3] < 200) continue;
+        const point = { x: (x + 0.5) / GRID, y: (y + 0.5) / GRID };
+        const dist = (point.x - target.x) ** 2 + (point.y - target.y) ** 2;
+        if (!best || dist < best.dist) best = { ...point, dist };
+      }
+    }
+    return best ? { x: best.x, y: best.y } : target;
+  }
+
+  function renderLens() {
+    const d = active();
+    const available = Boolean(!d.isSample && d.imageKey && d.src && widthOf(d));
+    els.lensToggle.hidden = !available;
+    if (!available) lens.open = false;
+    // A different photo or version (original / cutout / vector) starts from its own default spot.
+    if (lens.imageId !== `${d.id}:${d.imageKey}`) {
+      lens.imageId = `${d.id}:${d.imageKey}`;
+      lens.focus = null;
+    }
+    els.lens.hidden = !lens.open;
+    els.lensToggle.setAttribute("aria-pressed", String(lens.open));
+    if (!lens.open) return;
+
+    const img = els.img;
+    if (!img.complete || !img.naturalWidth) {
+      img.addEventListener("load", renderLens, { once: true });
+      return;
+    }
+    const widthIn = widthOf(d);
+    const pxPerInX = img.naturalWidth / widthIn;
+    const pxPerInY = img.naturalHeight / d.heightIn;
+    if (!lens.focus) lens.focus = lensDefaultFocus(d, img);
+    const focus = lens.focus;
+    const sw = LENS_IN * pxPerInX;
+    const sh = LENS_IN * pxPerInY;
+
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = els.lensCanvas;
+    canvas.width = Math.round(LENS_PX * dpr);
+    canvas.height = Math.round(LENS_PX * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, focus.x * img.naturalWidth - sw / 2, focus.y * img.naturalHeight - sh / 2, sw, sh, 0, 0, canvas.width, canvas.height);
+
+    const q = qualityOf(d);
+    const shown = `${LENS_IN.toFixed(1)} × ${LENS_IN.toFixed(1)} in shown`;
+    els.lensCaption.textContent = q && q.vector
+      ? `${shown} · vector, sharp at any size`
+      : `${shown} · ${q ? q.ppi : Math.round(Math.min(pxPerInX, pxPerInY))} pixels per inch` +
+        (q && q.issue ? ` · looks ${q.issue === "blurry" ? "blurry" : "compressed"}` : "");
+  }
+
+  /** Where in the image (0–1) a click on the preview landed, allowing for frame and letterboxing. */
+  function imagePointAt(clientX, clientY) {
+    const img = els.img;
+    const box = img.getBoundingClientRect();
+    const style = getComputedStyle(img);
+    const border = parseFloat(style.borderTopWidth) || 0;
+    let left = box.left + border;
+    let top = box.top + border;
+    let width = box.width - 2 * border;
+    let height = box.height - 2 * border;
+    if (style.objectFit === "contain" && img.naturalWidth) {
+      // Cutouts: fitted inside the box and pinned to the floor (object-position: center bottom).
+      const scale = Math.min(width / img.naturalWidth, height / img.naturalHeight);
+      const w = img.naturalWidth * scale;
+      const h = img.naturalHeight * scale;
+      left += (width - w) / 2;
+      top += height - h;
+      width = w;
+      height = h;
+    }
+    const x = (clientX - left) / width;
+    const y = (clientY - top) / height;
+    return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null;
+  }
+
+  els.lensToggle.addEventListener("click", () => {
+    lens.open = !lens.open;
+    renderLens();
+  });
+  $("lens-close").addEventListener("click", () => {
+    lens.open = false;
+    renderLens();
+    els.lensToggle.focus();
+  });
+  els.figure.addEventListener("click", (e) => {
+    if (!lens.open) return;
+    const point = imagePointAt(e.clientX, e.clientY);
+    if (!point) return;
+    lens.focus = point;
+    renderLens();
+  });
 
   new ResizeObserver(layoutStage).observe(els.wall);
 
@@ -1308,6 +1514,10 @@
         widthPx: d.widthPx,
         heightPx: d.heightPx,
         acceptedLowQuality: d.acceptedLowQuality,
+        // The audit's verdict, for checkout's quality line (the server re-checks the file).
+        blurry: Boolean(d.blurry),
+        compressed: Boolean(d.compressed),
+        vector: Boolean(d.vector),
         borderColor: d.borderColor,
         notes: d.notes.trim() || null,
       }))
@@ -1333,6 +1543,9 @@
     fair: "May look a little soft up close. A sharper photo or a smaller size will help.",
     low: "Likely to look blurry or pixelated at this size. Use a sharper or original photo, or choose a smaller size.",
     small: "This photo is under 1000 px, so it can't score above Fair — an original from your camera will print much sharper.",
+    blurry: "Photo looks blurry or out of focus — a sharper original will print much better.",
+    compressed: "Photo looks heavily compressed (blocky) — the original file will print cleaner.",
+    vector: "Vector graphic — prints perfectly sharp at any size.",
   };
 
   function renderQuality(d) {
@@ -1340,9 +1553,12 @@
     els.qualityRow.hidden = !q || d.isSample;
     if (!q) return;
     els.qualityBadge.className = `quality-badge is-${q.grade}`;
-    els.qualityBadge.textContent = `Quality ${q.score}/100 · ${SITE.qualityLabels[q.grade]}`;
-    const small = Math.max(d.widthPx, d.heightPx) < 1000 && q.grade !== "low";
-    els.qualityTip.textContent = (small ? QUALITY_TIPS.small : QUALITY_TIPS[q.grade]) + (d.note ? ` ${d.note}` : "");
+    els.qualityBadge.textContent = `Quality ${q.score}/100 · ${SITE.qualityLabels[q.grade]}${q.vector ? " · Vector" : ""}`;
+    const small = !q.vector && Math.max(d.widthPx, d.heightPx) < 1000 && q.grade !== "low";
+    const tip = q.vector ? QUALITY_TIPS.vector : q.issue ? QUALITY_TIPS[q.issue] : small ? QUALITY_TIPS.small : QUALITY_TIPS[q.grade];
+    els.qualityTip.textContent = tip + (d.note ? ` ${d.note}` : "");
+    // Non-blocking nudge: camera originals print sharper than screenshots / web copies.
+    els.sourceNote.hidden = !d.webOrScreenshot || q.vector;
     els.qualityConsent.hidden = q.grade !== "low";
     els.qualityConsent.classList.toggle("has-error", q.grade === "low" && !d.acceptedLowQuality);
     els.acceptLowQuality.checked = d.acceptedLowQuality;
@@ -1352,7 +1568,7 @@
     const d = active();
     d.removeBackground = els.removeBg.checked;
     if (d.removeBackground && !d.cutout) {
-      startBackgroundRemoval(d);
+      if (!d.graphic) startBackgroundRemoval(d);
       openReview(d);
     }
     applyBackgroundChoice(d);

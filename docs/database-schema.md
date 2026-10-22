@@ -19,6 +19,7 @@ order by `npm run migrate`:
 | `008_admin_and_names.sql` | `orders.customer_name`, shipping/tracking columns, `order_items.print_score`, `order_notes` table, list indexes |
 | `009_transparency.sql` | `order_items.has_transparency` |
 | `010_border_color.sql` | `order_items.border_color` |
+| `011_image_audit.sql` | `order_items.is_blurry`, `order_items.is_compressed` |
 
 `migrate.js` re-runs **every** file on each run, so every migration must
 be idempotent (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`, guarded `DO`
@@ -55,7 +56,7 @@ blocks).
 |---|---|---|
 | id | uuid, pk | |
 | order_id | uuid, fk → orders.id | cascade delete |
-| image_key | text | storage key from `POST /api/uploads`, e.g. `<uuid>.jpg`. Not a URL, so it works with either storage driver. Rows from before `003` still hold an old URL string |
+| image_key | text | storage key from `POST /api/uploads`, e.g. `<uuid>.jpg`; `<uuid>.svg` for a vectorized graphic (its print files are `<uuid>.pdf` + `<uuid>.png`). Not a URL, so it works with either storage driver. Rows from before `003` still hold an old URL string |
 | size_tier | text (enum) | `small`, `medium`, `life_size`, `xl`; derived server-side from `height_in` (≤36 / ≤60 / ≤78 / above) |
 | material | text (enum) | `cardboard`, `coroplast`, `foam_board`, `acrylic`; the storefront's "Premium Corrugated" is `coroplast` |
 | height_in | numeric(6,2) | chosen by the customer in the studio, 12–96 |
@@ -64,6 +65,7 @@ blocks).
 | print_ppi | integer | pixels per printed inch at the ordered size |
 | print_score | integer | 0–100: `min(100, ppi × 2)`, capped at 59 under 1000 px (great ≥ 90, good ≥ 60, fair ≥ 36, low below); null before `008` |
 | has_transparency | boolean | true when the stored print file has transparent pixels (a background-removed cutout: cut along the outline). Measured by the server with sharp at order time; default false, so it's false for rows from before `009` |
+| is_blurry / is_compressed | boolean | the image audit's verdict on the stored print file, re-checked at order time (`services/imageAnalysis.js`). Either one caps `print_score` at 59 and is shown to the supplier. Default false; added in `011` |
 | low_quality_accepted | boolean | true when the item was low quality and the customer ticked "I understand this may print blurry" |
 | text_elements | jsonb | `[{ style: "bubble"\|"placard"\|"caption", text }]`, max 3, text 1–100 characters; default `[]` |
 | quantity | integer | `> 0` |

@@ -132,6 +132,10 @@
                 </button>
               </div>
               <div class="preview-tools">
+                <button type="button" class="icon-btn" id="lens-toggle" aria-pressed="false" aria-controls="print-lens"
+                  aria-label="Inspect print detail at actual size" title="Inspect print detail (actual size)" hidden>
+                  <svg class="icon"><use href="#i-search"/></svg>
+                </button>
                 <button type="button" class="icon-btn" id="grid-toggle" aria-pressed="false" aria-label="Show 1 ft grid" title="Show 1 ft grid">
                   <svg class="icon"><use href="#i-grid"/></svg>
                 </button>
@@ -142,6 +146,19 @@
             </div>
 
             <div class="stage" id="stage">
+              <!-- "Inspect print detail": a 200×200 window at actual printed size (js/studio.js). -->
+              <aside class="print-lens" id="print-lens" hidden aria-labelledby="print-lens-title">
+                <div class="print-lens__head">
+                  <strong id="print-lens-title">Actual print size</strong>
+                  <button type="button" class="icon-btn print-lens__close" id="lens-close" aria-label="Close print detail">
+                    <svg class="icon"><use href="#i-x"/></svg>
+                  </button>
+                </div>
+                <canvas class="print-lens__canvas checker" id="print-lens-canvas" width="200" height="200"
+                  aria-label="Close-up of your photo at the size it will print"></canvas>
+                <p class="print-lens__caption" id="print-lens-caption"></p>
+                <p class="print-lens__hint">Tap or click the preview to inspect another spot. Screens vary — look from about arm's length.</p>
+              </aside>
               <div class="stage__floor"></div>
               <div class="stage__wall" id="stage-wall">
                 <div class="stage__grid" id="stage-grid" hidden></div>
@@ -248,6 +265,11 @@
                   <span class="quality-badge" id="quality-badge"></span>
                 </div>
                 <p class="hint" id="quality-tip"></p>
+                <p class="source-note" id="source-note" role="note" hidden>
+                  <svg class="icon"><use href="#i-info"/></svg>
+                  <span>This looks like a screenshot or web photo. For the sharpest print, please upload the original
+                  full-resolution photo directly from your camera roll.</span>
+                </p>
                 <details class="explainer">
                   <summary>Why does resolution matter?</summary>
                   <p>A standee is printed many times bigger than your phone screen, so every printed inch
@@ -257,8 +279,11 @@
                   <p>Original photos from a phone camera (3000–4000 px) score well. Screenshots and images
                   saved from chat apps or social media are usually under 1000 px — those can't score above
                   "Fair", whatever the size.</p>
+                  <p>Pixels aren't everything: we also check whether the photo looks <strong>blurry</strong>
+                  (out of focus or shaken) or <strong>heavily compressed</strong> (blocky, as when it's been
+                  saved or sent many times). Either one caps the score at "Fair".</p>
                   <p><strong>Tip:</strong> upload the original photo (not a screenshot or a forwarded copy),
-                  or choose a smaller size.</p>
+                  or choose a smaller size. Use the magnifier on the preview to see it at actual print size.</p>
                 </details>
                 <label class="consent" id="quality-consent" hidden>
                   <input type="checkbox" id="accept-low-quality" />
@@ -492,6 +517,19 @@
         </button>
       </div>
       <button type="button" class="link-accent review-secondary" id="review-keep-original">Keep the original background instead</button>
+    </div>
+
+    <div class="review-pane" data-pane="graphic" hidden>
+      <div class="review-image"><img id="review-graphic-img" alt="Your logo or graphic as uploaded" /></div>
+      <p class="review-hint">This looks like a logo or graphic. Turn it into a <strong>vector</strong> and it prints
+        perfectly sharp at any size, with the background removed.</p>
+      <div class="modal__actions">
+        <button type="button" class="btn btn-secondary" id="review-keep-graphic">Keep as is</button>
+        <button type="button" class="btn btn-primary" id="review-vectorize">
+          <svg class="icon"><use href="#i-shapes"/></svg>Make it a vector
+        </button>
+      </div>
+      <button type="button" class="link-accent review-secondary" id="review-is-photo">It's a photo — remove the background instead</button>
     </div>
 
     <div class="review-pane" data-pane="failed" hidden>

@@ -4,7 +4,7 @@
  * rest of the order flow keeps working without AWS credentials on hand.
  */
 const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
-const { createDownloadUrl, isValidKey } = require("./storage");
+const { createDownloadUrl, isValidKey, isVectorKey, printFiles } = require("./storage");
 const config = require("../config");
 const { qualityGrade } = require("./pricing");
 const {
@@ -64,7 +64,9 @@ function formatItem(item, index) {
   for (const el of item.textElements || []) {
     lines.push(`   ${TEXT_STYLE_LABELS[el.style] || el.style}: "${el.text}"`);
   }
-  if (item.printPpi) {
+  if (item.isVector || isVectorKey(item.imageKey)) {
+    lines.push("   Print quality: Great — vector graphic, sharp at any size (scale the PDF to the ordered size)");
+  } else if (item.printPpi) {
     // Older rows have no stored score; derive it from the ppi.
     const score = item.printScore ?? Math.min(100, item.printPpi * 2);
     lines.push(
@@ -72,6 +74,8 @@ function formatItem(item, index) {
         (item.lowQualityAccepted ? " — customer accepted low quality" : "")
     );
   }
+  if (item.isBlurry) lines.push("   ⚠ Photo looks blurry or out of focus (customer was told)");
+  if (item.isCompressed) lines.push("   ⚠ Photo looks heavily compressed / blocky (customer was told)");
   lines.push(
     item.hasTransparency
       ? "   Background: removed — transparent PNG, cut along the outline"
@@ -80,8 +84,10 @@ function formatItem(item, index) {
   );
   if (item.notes) lines.push(`   Notes: ${item.notes}`);
   if (isValidKey(item.imageKey)) {
-    const { url, expiresAt } = createDownloadUrl(item.imageKey);
-    lines.push(`   Image (link expires ${expiresAt.slice(0, 10)}): ${url}`);
+    for (const file of printFiles(item.imageKey)) {
+      const { url, expiresAt } = createDownloadUrl(file.key);
+      lines.push(`   ${file.label} (link expires ${expiresAt.slice(0, 10)}): ${url}`);
+    }
   }
   return lines.join("\n");
 }

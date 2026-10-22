@@ -74,7 +74,8 @@ backend/
             ├── 007_print_quality.sql — image pixel size, print_ppi, low_quality_accepted
             ├── 008_admin_and_names.sql — customer name, tracking, print_score, order_notes
             ├── 009_transparency.sql — order_items.has_transparency
-            └── 010_border_color.sql — order_items.border_color
+            ├── 010_border_color.sql — order_items.border_color
+            └── 011_image_audit.sql — order_items.is_blurry, is_compressed
 ```
 
 `migrate.js` re-runs **every** file each time, so migrations must be
@@ -288,7 +289,7 @@ confirmation email includes it.
 - `services/storage.js` is the **only** file that knows where images
   live: `STORAGE_DRIVER=disk` (default: `backend/storage/uploads/`) or
   `s3` (production: private `S3_BUCKET`, under `uploads/`). Nothing else
-  should touch `fs` or S3 for images. `isValidKey` (`<uuid>.<jpg|png|webp>`)
+  should touch `fs` or S3 for images. `isValidKey` (`<uuid>.<jpg|png|webp|svg|pdf>`)
   is checked before any file access, so path traversal is impossible.
 - The supplier gets images through `createDownloadUrl(key)`: our own
   HMAC-signed `GET /api/files/:key` link, valid for
@@ -296,6 +297,39 @@ confirmation email includes it.
   directly because S3 caps them at 7 days. In s3 mode the route redirects
   to a 5-minute presigned GET. `SITE_URL` must be the site's public
   address, or the links in emails won't work.
+- **Image audit** (`services/imageAnalysis.js`, plain JS on top of sharp,
+  no external service). It's informational: it never rejects anything, and
+  only caps the score at Fair.
+  - `analyzeSource`: screenshot or web-download detection from the
+    *original* bytes, before re-encoding strips the metadata.
+    - Signals: a screenshot or messaging-app file name; or no camera EXIF
+      (via `exif-reader`) **and** a phone-screen ratio, a PNG, or a long
+      side ≤ 2048 px.
+    - Skipped for HEIC, PDF and `kind=cutout`, and for flat artwork.
+  - `analyzeImage`, on the stored file:
+    - **Blur:** the 90th percentile of per-128 px-tile Laplacian variance,
+      at ≤ 2000 px, over fully opaque tiles only. Blurry below 60, so a
+      soft background alone doesn't count.
+    - **Compression:** 8×8 blockiness (the strongest of the 8 column/row
+      offsets ÷ the median) on a central crop of up to 1024 px. Compressed
+      above 2.0.
+    - **Flat artwork:** the 12 most common colours (nearest-neighbour
+      sample) cover ≥ 90%, plus a crisp tile (max ≥ 200).
+    - Calibration numbers are in the file's comments.
+  - **Order time:** `storage.readImageSize` re-runs `analyzeImage`, so
+    `printQuality({ blurry, compressed })` and `order_items.is_blurry` /
+    `is_compressed` come from the file, not the browser.
+- **Vectorize** (`services/vectorize.js`, `POST /uploads/:key/vectorize`,
+  using `imagetracerjs`):
+  1. Scale to ≤ 1200 px and find the main colours. Snap every pixel to
+     them, which turns anti-aliased edge blends into clean regions.
+  2. Remove the edge-connected background and trim to the content.
+  3. Trace with that palette.
+  4. Write the SVG (preview) and a hand-built PDF: filled + stroked paths,
+     quadratic curves turned into cubic, even-odd holes, Flate-compressed.
+     The PNG fallback is rendered from the SVG with `sharp(svg, { density })`.
+  - `storage.printFiles(key)` maps an `.svg` key to its PDF + PNG for the
+    email, the admin links and the bundle. `readImageSize` measures the PNG.
 - **Background-removed cutouts.** Background removal runs in the
   customer's browser (`frontend/js/background-removal.js`); the server never
   runs a model. The studio uploads the finished cutout as an ordinary PNG

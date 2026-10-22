@@ -48,12 +48,17 @@ function actorFrom(req) {
   return { name, ip: clientIp(req), userAgent: (req.get("User-Agent") || "").slice(0, 300) };
 }
 
+/**
+ * One link per print file: `url` is the main one (the image, or a vector's
+ * PDF), `files` lists them all with labels (a vector adds its PNG fallback).
+ */
 function itemDownloadLinks(order) {
-  return order.items.map((item) => ({
-    itemId: item.id,
+  return order.items.map((item) => {
     // Orders from before 003_image_key.sql hold a URL, not a key — no link for those.
-    ...(storage.isValidKey(item.imageKey) ? storage.createDownloadUrl(item.imageKey) : { url: null, expiresAt: null }),
-  }));
+    if (!storage.isValidKey(item.imageKey)) return { itemId: item.id, url: null, expiresAt: null, files: [] };
+    const files = storage.printFiles(item.imageKey).map((f) => ({ label: f.label, ...storage.createDownloadUrl(f.key) }));
+    return { itemId: item.id, url: files[0].url, expiresAt: files[0].expiresAt, files };
+  });
 }
 
 /** Wraps an async handler so thrown errors become JSON responses. */
@@ -88,6 +93,7 @@ router.get(
       ...item,
       downloadUrl: links[i].url,
       downloadExpiresAt: links[i].expiresAt,
+      downloadFiles: links[i].files,
     }));
     ok(res, { ...order, statusEvents, notes, allowedNextStatuses: ordersService.allowedNextStatuses(order.status) });
   })
@@ -160,7 +166,11 @@ function orderDetailsText(order) {
       : `${formatFeetInches(item.heightIn)} tall`;
     lines.push(
       "",
-      `Item ${index + 1}: ${bundleImageName(order, item, index)}`,
+      `Item ${index + 1}: ${
+        storage.isValidKey(item.imageKey)
+          ? storage.printFiles(item.imageKey).map((f) => bundleImageName(order, item, index, f.key)).join(" + ")
+          : bundleImageName(order, item, index)
+      }`,
       `  Quantity: ${item.quantity}`,
       `  Material: ${MATERIAL_LABELS[item.material] || item.material}`,
       `  Size: ${TIER_LABELS[item.sizeTier] || item.sizeTier}, ${size}`
@@ -168,7 +178,9 @@ function orderDetailsText(order) {
     for (const el of item.textElements || []) {
       lines.push(`  ${TEXT_STYLE_LABELS[el.style] || el.style}: "${el.text}"`);
     }
-    if (item.imageWidthPx) {
+    if (item.isVector) {
+      lines.push("  Vector graphic — print from the PDF, scaled to the ordered size (PNG fallback included)");
+    } else if (item.imageWidthPx) {
       lines.push(`  Image: ${item.imageWidthPx} × ${item.imageHeightPx} px` + (item.printScore != null ? `, print quality ${item.printScore}/100` : ""));
     }
     lines.push(
@@ -177,13 +189,15 @@ function orderDetailsText(order) {
         : "  Background: kept (print the whole photo)",
       `  ${borderLabel(item.borderColor)}`
     );
+    if (item.isBlurry) lines.push("  ⚠ Photo looks blurry or out of focus (customer was told)");
+    if (item.isCompressed) lines.push("  ⚠ Photo looks heavily compressed / blocky (customer was told)");
     if (item.notes) lines.push(`  Notes: ${item.notes}`);
   });
   return lines.join("\n") + "\n";
 }
 
-function bundleImageName(order, item, index) {
-  const ext = (item.imageKey || "").split(".").pop();
+function bundleImageName(order, item, index, key = item.imageKey) {
+  const ext = (key || "").split(".").pop();
   return `${order.id}-item-${index + 1}.${ext}`;
 }
 
@@ -195,7 +209,10 @@ router.get(
     const images = [];
     for (const [index, item] of order.items.entries()) {
       if (!storage.isValidKey(item.imageKey)) continue; // pre-003 orders
-      images.push({ name: bundleImageName(order, item, index), data: await storage.readFile(item.imageKey) });
+      // A vector graphic contributes its PDF and PNG fallback.
+      for (const file of storage.printFiles(item.imageKey)) {
+        images.push({ name: bundleImageName(order, item, index, file.key), data: await storage.readFile(file.key) });
+      }
     }
 
     res.set("Content-Type", "application/zip");

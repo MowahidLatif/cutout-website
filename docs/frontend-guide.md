@@ -293,6 +293,29 @@ limits) and `makeThumbnail(src)`.
      1000 px can't score above Fair. **Low** shows a required checkbox ("I understand this
      photo may print blurry…"). Add to cart is blocked until it's ticked,
      and the cart item carries `acceptedLowQuality`.
+   - **Image audit** (the upload response's `audit`; see `api-spec.md`):
+     - **Blurry or heavily compressed:** the score is capped at Fair, with
+       the tip "Photo looks blurry or out of focus…" or "…heavily
+       compressed (blocky)…". The flags live on each version
+       (`original` / `cutout`) and follow `applyBackgroundChoice`. The cart
+       item carries them for checkout's quality line.
+     - **Screenshot / web photo:** a non-blocking info note (`#source-note`,
+       blue, not red) under Print quality, plus a tag on the tray card.
+     - **Flat artwork** (`looksLikeGraphic`): MODNet isn't run. The review
+       popup opens a **Graphic** pane with **Make it a vector**, **Keep as
+       is**, and "It's a photo — remove the background instead". The vector
+       (`POST /uploads/:key/vectorize`) becomes the design's `cutout`
+       (`vector: true`): the tray shows "✓ Vector graphic", the score is
+       "100/100 · Great · Vector", and Edit / Trace is hidden.
+   - **"Inspect print detail" lens** (magnifier in the preview tools):
+     - a 200 × 200 px canvas at actual printed size (96 CSS px = 1 in, so
+       ≈ 2.1 × 2.1 in), drawn from the full-resolution image with smoothing
+     - **Caption:** pixels per inch, plus "looks blurry" or "vector". It
+       redraws live as the size changes.
+     - **Default spot:** the centre, or the top quarter for cutouts (the
+       face), snapped to the nearest visible pixel. Clicking the preview
+       moves it.
+     - On phones it's pinned to the screen corner.
    - **Order limits:** at most `SITE.maxUniqueImages` (10) different photos
      and `SITE.maxOrderQuantity` (500) cutouts per order, counting what's
      already in the cart (`Cart.totals()`).

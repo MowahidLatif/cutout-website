@@ -3,6 +3,10 @@
  * picks "disk" (default — local dev, no AWS needed) or "s3" (production).
  * Everything else deals only in opaque image keys like "<uuid>.jpg".
  *
+ * A vectorized graphic (services/vectorize.js) is three files sharing one
+ * uuid: "<uuid>.svg" (the preview, and the key orders refer to), "<uuid>.pdf"
+ * (the vector print file) and "<uuid>.png" (a raster fallback).
+ *
  * Download links are our own HMAC-signed URLs to GET /api/files/:key
  * rather than S3 presigned URLs, because S3 caps those at 7 days and the
  * supplier needs longer. In s3 mode that route redirects to a short-lived
@@ -15,8 +19,9 @@ const { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } = requ
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const sharp = require("sharp");
 const config = require("../config");
+const { analyzeImage } = require("./imageAnalysis");
 
-const KEY_PATTERN = /^[0-9a-f-]{36}\.(jpg|png|webp)$/;
+const KEY_PATTERN = /^[0-9a-f-]{36}\.(jpg|png|webp|svg|pdf)$/;
 
 function driver() {
   return config.storageDriver;
@@ -29,6 +34,30 @@ function uploadDir() {
 
 function isValidKey(key) {
   return typeof key === "string" && KEY_PATTERN.test(key);
+}
+
+function isVectorKey(key) {
+  return isValidKey(key) && key.endsWith(".svg");
+}
+
+/** The print files that go with a vector graphic's "<uuid>.svg" key. */
+function vectorFiles(key) {
+  const base = key.replace(/\.svg$/, "");
+  return { pdf: `${base}.pdf`, png: `${base}.png` };
+}
+
+/**
+ * The files the supplier prints from for an item: the image itself, or for
+ * a vector graphic its PDF (the print file) plus the PNG fallback.
+ * @returns {{ label: string, key: string }[]}
+ */
+function printFiles(key) {
+  if (!isVectorKey(key)) return [{ label: "Image", key }];
+  const { pdf, png } = vectorFiles(key);
+  return [
+    { label: "Print file (vector PDF)", key: pdf },
+    { label: "PNG fallback", key: png },
+  ];
 }
 
 function assertValidKey(key) {
@@ -103,6 +132,9 @@ async function sendFile(res, key) {
   if (!(await fileExists(key))) {
     return res.status(404).send("Not found");
   }
+  // We generate every SVG ourselves (paths only), but never let one run
+  // anything if it's opened directly.
+  if (key.endsWith(".svg")) res.set("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'");
   res.download(path.join(uploadDir(), key), key);
 }
 
@@ -135,13 +167,27 @@ function createDownloadUrl(key, { ttlSeconds, relative = false } = {}) {
  *
  * @returns {Promise<{ width: number, height: number }>}
  */
+/**
+ * What createOrder needs to know about a stored print file, read from the
+ * file itself (never from the browser): pixel size, real transparency, and
+ * the image audit's blur/compression verdict. A vector's numbers come from
+ * its PNG fallback.
+ */
 async function readImageSize(key) {
-  const image = sharp(await readFile(key));
+  if (isVectorKey(key)) {
+    const png = await readFile(vectorFiles(key).png);
+    const { width, height } = await sharp(png).metadata();
+    const transparent = !(await sharp(png).stats()).isOpaque;
+    return { width, height, transparent, vector: true, blurry: false, compressed: false };
+  }
+  const buffer = await readFile(key);
+  const image = sharp(buffer);
   const { width, height, hasAlpha } = await image.metadata();
   // "Transparent" means some pixels really are see-through (a cutout), not
   // just that the file has an alpha channel.
   const transparent = hasAlpha ? !(await image.stats()).isOpaque : false;
-  return { width, height, transparent };
+  const audit = await analyzeImage(buffer);
+  return { width, height, transparent, vector: false, blurry: audit.isBlurry, compressed: audit.isCompressed };
 }
 
 /** The stored file's bytes (for the admin's supplier bundle). */
@@ -170,5 +216,8 @@ module.exports = {
   createDownloadUrl,
   readImageSize,
   readFile,
+  isVectorKey,
+  vectorFiles,
+  printFiles,
   verifyDownloadSignature,
 };

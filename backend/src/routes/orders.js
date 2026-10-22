@@ -3,6 +3,7 @@ const multer = require("multer");
 const ordersService = require("../services/orders");
 const { createCheckoutSession } = require("../services/stripe");
 const { processUpload, maxUploadBytes, maxUploadMb } = require("../services/uploads");
+const { vectorizeUpload } = require("../services/vectorize");
 const { ok, fail } = require("./_respond");
 
 const router = express.Router();
@@ -77,12 +78,24 @@ router.post("/uploads", (req, res) => {
       if (!req.file) {
         throw Object.assign(new Error(fieldHint), { code: "VALIDATION_ERROR" });
       }
-      const result = await processUpload(req.file.buffer);
+      const result = await processUpload(req.file.buffer, {
+        filename: req.file.originalname,
+        kind: req.body && req.body.kind === "cutout" ? "cutout" : "photo",
+      });
       ok(res, result, 201);
     } catch (err) {
       fail(res, err);
     }
   });
+});
+
+// Flat artwork → vector (SVG preview + PDF print file + PNG fallback).
+router.post("/uploads/:key/vectorize", async (req, res) => {
+  try {
+    ok(res, await vectorizeUpload(req.params.key), 201);
+  } catch (err) {
+    fail(res, err);
+  }
 });
 
 module.exports = router;

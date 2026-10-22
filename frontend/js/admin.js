@@ -309,16 +309,26 @@
             : "Border: none"
         }</p>
         ${item.notes ? `<p class="hint"><strong>Customer notes:</strong> ${escapeHtml(item.notes)}</p>` : ""}
-        <div class="item-link">${renderLink(item.downloadUrl, item.downloadExpiresAt)}</div>
+        ${item.isVector ? '<p class="hint"><strong>Vector graphic</strong> — print from the PDF, scaled to the ordered size</p>' : ""}
+        ${item.isBlurry ? '<p class="hint">⚠ Photo looks blurry or out of focus (customer was told)</p>' : ""}
+        ${item.isCompressed ? '<p class="hint">⚠ Photo looks heavily compressed / blocky (customer was told)</p>' : ""}
+        <div class="item-link">${renderLinks(item.downloadFiles, item.downloadUrl, item.downloadExpiresAt)}</div>
       </div>`;
   }
 
-  function renderLink(url, expiresAt) {
-    if (!url) return "<em>No downloadable image for this item.</em>";
-    return `
-      <a class="btn btn-ghost btn-sm" href="${escapeHtml(url)}">Download image</a>
-      <button type="button" class="btn btn-ghost btn-sm" data-copy="${escapeHtml(url)}">Copy link</button>
-      <span class="hint" style="margin-left:0.5rem">Link expires ${escapeHtml(new Date(expiresAt).toLocaleDateString())}</span>`;
+  /** One row per print file (a vector graphic has its PDF and a PNG fallback). */
+  function renderLinks(files, url, expiresAt) {
+    const list = files && files.length ? files : url ? [{ label: "Image", url, expiresAt }] : [];
+    if (!list.length) return "<em>No downloadable image for this item.</em>";
+    return list
+      .map(
+        (f) => `<div class="item-link__row">
+          <a class="btn btn-ghost btn-sm" href="${escapeHtml(f.url)}">Download ${escapeHtml(f.label === "Image" ? "image" : f.label)}</a>
+          <button type="button" class="btn btn-ghost btn-sm" data-copy="${escapeHtml(f.url)}">Copy link</button>
+          <span class="hint" style="margin-left:0.5rem">Link expires ${escapeHtml(new Date(f.expiresAt).toLocaleDateString())}</span>
+        </div>`
+      )
+      .join("");
   }
 
   function renderNotes(notes) {
@@ -428,7 +438,7 @@
     }
     links.forEach((link) => {
       const card = detailEl.querySelector(`[data-item-id="${CSS.escape(link.itemId)}"] .item-link`);
-      if (card) card.innerHTML = renderLink(link.url, link.expiresAt);
+      if (card) card.innerHTML = renderLinks(link.files, link.url, link.expiresAt);
     });
     showStatus("Fresh links generated.", "success");
   }

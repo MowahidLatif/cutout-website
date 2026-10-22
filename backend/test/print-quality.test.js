@@ -7,7 +7,7 @@ const backend = require(path.join(SRC, "services/pricing"));
 const frontend = loadFrontend("js/pricing.js").Pricing;
 
 test("the reported example: 588×900 at 6 ft scores low", () => {
-  assert.deepEqual(backend.printQuality({ widthPx: 588, heightPx: 900, heightIn: 72 }), { ppi: 13, score: 26, grade: "low" });
+  assert.deepEqual(backend.printQuality({ widthPx: 588, heightPx: 900, heightIn: 72 }), { ppi: 13, score: 26, grade: "low", issue: null });
 });
 
 test("images under 1000 px can't score above fair, whatever the size", () => {

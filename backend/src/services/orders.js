@@ -188,6 +188,9 @@ async function createOrder(input) {
       heightPx: size.height,
       heightIn: Number(item.heightIn),
       widthIn: item.widthIn ? Number(item.widthIn) : null,
+      blurry: size.blurry,
+      compressed: size.compressed,
+      vector: size.vector,
     });
     if (quality.grade === "low" && item.acceptedLowQuality !== true) {
       throw validationError(
@@ -278,8 +281,8 @@ async function createOrder(input) {
            (order_id, image_key, size_tier, material, height_in, width_in, text_elements,
             quantity, unit_price, line_total, notes,
             image_width_px, image_height_px, print_ppi, low_quality_accepted, print_score, has_transparency,
-            border_color)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+            border_color, is_blurry, is_compressed)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
         [
           order.id,
           item.imageKey,
@@ -299,6 +302,8 @@ async function createOrder(input) {
           item.image.score,
           item.image.transparent,
           item.borderColor,
+          item.image.blurry,
+          item.image.compressed,
         ]
       );
     }
@@ -375,6 +380,9 @@ async function getOrderById(orderId, { email } = {}) {
       printPpi: i.print_ppi,
       printScore: i.print_score,
       hasTransparency: Boolean(i.has_transparency),
+      isBlurry: Boolean(i.is_blurry),
+      isCompressed: Boolean(i.is_compressed),
+      isVector: storage.isVectorKey(i.image_key),
       borderColor: i.border_color || null,
       notes: i.notes || null,
       lowQualityAccepted: Boolean(i.low_quality_accepted),

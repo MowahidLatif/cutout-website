@@ -13,6 +13,10 @@ See `CLAUDE.md` and `docs/` for the full spec — this README is just the
 - **Backend:** Express (Node.js) — `backend/`. Flat routes → services → db.
 - **Database:** PostgreSQL.
 - **Payments:** Stripe Checkout.
+- **Image audit and logo vectorization:** on our server, no external
+  services. `exif-reader` (MIT) reads camera metadata and `imagetracerjs`
+  (public domain / Unlicense) traces flat artwork into SVG plus a vector
+  PDF. Blur, compression and flat-artwork checks are plain JS on `sharp`.
 - **Background removal:** in the customer's browser, with
   [Transformers.js](https://github.com/huggingface/transformers.js) 4.3.0
   and the MODNet model (`Xenova/modnet`). Both are Apache-2.0, so

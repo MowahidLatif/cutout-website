@@ -22,6 +22,7 @@ const sharp = require("sharp");
 const { randomUUID } = require("crypto");
 const config = require("../config");
 const storage = require("./storage");
+const { analyzeSource, analyzeImage, hasCameraDetails } = require("./imageAnalysis");
 
 // Guards against decompression bombs: a small file that decodes to a huge image.
 const MAX_INPUT_PIXELS = 100_000_000;
@@ -142,12 +143,17 @@ async function shrinkToFit(image, first) {
 
 /**
  * @param {Buffer} buffer raw uploaded bytes
- * @returns {Promise<{ imageKey: string, width: number, height: number, previewUrl: string, note: string|null }>}
+ * @param {Object} [options]
+ * @param {string} [options.filename] the name the file was uploaded with (only used by the audit)
+ * @param {string} [options.kind] "cutout" for the studio's own background-removed/traced PNGs
+ *   (they have no camera metadata by design, so the source and graphic checks are skipped)
+ * @returns {Promise<{ imageKey: string, width: number, height: number, previewUrl: string, note: string|null, audit: Object }>}
  */
-async function processUpload(buffer) {
+async function processUpload(buffer, { filename = "", kind = "photo" } = {}) {
   let image; // a sharp pipeline, already oriented
   let output; // one of OUTPUTS
   let note = null;
+  let source = { format: "pdf", exif: undefined }; // what the audit needs from the original bytes
 
   if (isPdf(buffer)) {
     const { png, pages } = await renderPdfFirstPage(buffer);
@@ -157,6 +163,7 @@ async function processUpload(buffer) {
   } else if (isHeic(buffer)) {
     image = await decodeHeic(buffer);
     output = OUTPUTS.jpeg;
+    source = { format: "heif", exif: undefined };
   } else {
     let metadata;
     try {
@@ -168,6 +175,7 @@ async function processUpload(buffer) {
       throw unsupportedError(`"${metadata.format.toUpperCase()}" files aren't supported. Please upload a ${SUPPORTED} file.`);
     }
     output = OUTPUTS[metadata.format];
+    source = { format: metadata.format, exif: metadata.exif };
     // Bake EXIF rotation into the pixels so sideways phone photos don't print
     // sideways; re-encoding drops EXIF (incl. GPS) but keeps the colour profile.
     image = sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS }).autoOrient().keepIccProfile();
@@ -192,6 +200,32 @@ async function processUpload(buffer) {
     height: result.info.height,
     previewUrl: storage.createDownloadUrl(imageKey, { ttlSeconds: PREVIEW_TTL_SECONDS, relative: true }).url,
     note,
+    audit: await auditUpload(result, source, { filename, kind }),
+  };
+}
+
+/**
+ * The image audit (services/imageAnalysis.js). Pixel checks run on the stored
+ * file — the same thing createOrder re-checks — and the source check on the
+ * original's metadata, which re-encoding strips. Informational only.
+ */
+async function auditUpload(result, source, { filename, kind }) {
+  const pixels = await analyzeImage(result.data);
+  const isCutout = kind === "cutout";
+  const fromCamera = hasCameraDetails(source.exif);
+  const { isWebOrScreenshot, reasons } = isCutout
+    ? { isWebOrScreenshot: false, reasons: [] }
+    : analyzeSource({ filename, format: source.format, exif: source.exif, width: result.info.width, height: result.info.height });
+  // Flat artwork (few colours, not from a camera) can be turned into a vector.
+  const looksLikeGraphic = !isCutout && !fromCamera && source.format !== "heif" && pixels.isFlat;
+  return {
+    // Artwork never comes from a camera, so "upload the camera original" doesn't apply.
+    isWebOrScreenshot: isWebOrScreenshot && !looksLikeGraphic,
+    sourceReasons: looksLikeGraphic ? [] : reasons,
+    isBlurry: pixels.isBlurry,
+    isCompressed: pixels.isCompressed,
+    looksLikeGraphic,
+    sharpness: pixels.sharpness,
   };
 }
 

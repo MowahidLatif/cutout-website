@@ -18,6 +18,10 @@ function round2(n) {
  *   apps) rarely print well, whatever the size.
  *   grade:  great ≥ 90 · good ≥ 60 · fair ≥ 36 · low below
  *
+ *   The image audit (services/imageAnalysis.js) also caps it at 59 when the
+ *   photo looks blurry or heavily compressed (`issue` says which) — lots of
+ *   pixels don't help if they're soft. A vector graphic is always 100.
+ *
  * Identical copy in frontend/js/pricing.js (a test keeps them in step).
  *
  * @param {Object} params
@@ -25,14 +29,19 @@ function round2(n) {
  * @param {number} params.heightPx stored image height in pixels
  * @param {number} params.heightIn printed height in inches
  * @param {number|null} [params.widthIn] printed width; defaults to the photo's proportions
- * @returns {{ ppi: number, score: number, grade: "great"|"good"|"fair"|"low" }}
+ * @param {boolean} [params.blurry] / [params.compressed] audit flags (cap at 59)
+ * @param {boolean} [params.vector] a vector graphic (always 100)
+ * @returns {{ ppi: number|null, score: number, grade: "great"|"good"|"fair"|"low", issue: "blurry"|"compressed"|null, vector?: true }}
  */
-function printQuality({ widthPx, heightPx, heightIn, widthIn }) {
+function printQuality({ widthPx, heightPx, heightIn, widthIn, blurry = false, compressed = false, vector = false }) {
+  if (vector) return { ppi: null, score: 100, grade: "great", issue: null, vector: true };
   const printedWidth = widthIn || (heightIn * widthPx) / heightPx;
   const ppi = Math.round(Math.min(widthPx / printedWidth, heightPx / heightIn));
   let score = Math.min(100, ppi * 2);
   if (Math.max(widthPx, heightPx) < SMALL_IMAGE_PX) score = Math.min(score, 59);
-  return { ppi, score, grade: qualityGrade(score) };
+  const issue = blurry ? "blurry" : compressed ? "compressed" : null;
+  if (issue) score = Math.min(score, 59);
+  return { ppi, score, grade: qualityGrade(score), issue };
 }
 
 /** Photos smaller than this on their long side can't score above "fair". */
